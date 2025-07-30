@@ -1,0 +1,17 @@
+/*
+!simulation
+simulation/*.o
+simulation/*.out
+simulation/.DS_Store
+simulation/__pycache__
+!analyze
+analyze/.DS_Store
+analyze/__pycache__
+!plot
+plot/.DS_Store
+plot/__pycache__
+plot/figures/*
+#!data_used
+#data_used/.DS_Store
+!README.md
+!.gitignore

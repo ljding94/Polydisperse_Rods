@@ -1,0 +1,87 @@
+import os
+import argparse
+import time
+from rods_init import *
+from rods_visual import *
+from rods_sample import *
+
+
+def main(args):
+
+    system_params = {
+        "folder": args.folder,
+        "run_type": args.run_type,
+        "run_num": args.run_num,
+        "pd_type": args.pd_type,
+        "N": args.N,
+    }
+    if args.run_type == "prec":
+
+        system_params["phi"] = args.phi
+        system_params["mean_ld"] = args.mean_ld
+        system_params["sigma"] = args.sigma
+
+    elif args.run_type == "rand":
+        system_params["phi"] = np.random.uniform(0.01, 0.3)
+        system_params["mean_ld"] = np.random.uniform(1.0, 4.0)
+        system_params["sigma"] = np.random.uniform(0.00, 0.50)
+
+    label = create_file_label(system_params)
+    folder = f"{args.folder}/{label}"
+    if not os.path.exists(folder):
+        os.makedirs(folder)
+
+    run_initialization(
+        save_dump_detail=args.save_dump_detail,
+        system_params=system_params,
+        randomization_steps=5000,
+        max_compression_steps=50000,
+        num_compression_stage=10,
+    )
+
+
+    # render(folder, "compressed.gsd", frame=-1) # no need, confirm OVITO works
+
+    run_sampling(
+        save_dump_detail=args.save_dump_detail,
+        system_params=system_params,
+        measurement_steps=5000,
+        N_measurement=100,
+    )
+
+
+if __name__ == "__main__":
+
+    start_time = time.time()
+
+    parser = argparse.ArgumentParser(description="Run polydisperse rods simulation.")
+
+    parser.add_argument("--folder", type=str, required=True, help="folder to save data.")
+    parser.add_argument("--run_type", type=str, choices=["prec", "rand"], required=True, default="prec", help="random parameter or precise parameter.")
+    parser.add_argument("--run_num", type=int, default=0, help="run number to keep track of the run.")
+    parser.add_argument("--pd_type", type=str, choices=["uniform", "normal"], required=True, help="Polydispersity type.")
+    parser.add_argument("--N", type=int, required=True, help="Number of particles.")
+
+    arg_required = False
+    parser.add_argument("--phi", type=float, required=arg_required, help="Packing fraction.")
+    parser.add_argument("--mean_ld", type=float, required=arg_required, help="Mean aspect ratio (L/d).")
+    parser.add_argument("--sigma", type=float, required=arg_required, help="Polydispersity (standard deviation).")
+
+    parser.add_argument("--save_dump_detail", type=bool, default=False, help="save lots of dump file or not.")
+
+    args = parser.parse_args()
+
+    print(args)
+
+    main(args)
+
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+    print(f"Simulation completed in {elapsed_time:.2f} seconds.")
+
+    # time referece: 10000 random, 100000 compression
+    # N50 phi0.3: 52s
+    # N500 phi0.3: 168s
+
+# sample usage:
+# python3 main_simulation.py --run_type prec --run_num 0 --pd_type uniform --N 100 --phi 0.10 --mean_ld 4.00 --sigma 0.10 --folder /Users/ldq/Work/Polydisperse_Rods/data_local/data_pool --save_dump_detail 1
