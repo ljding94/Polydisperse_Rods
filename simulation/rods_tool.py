@@ -169,7 +169,7 @@ class MeasureScattering(hoomd.custom.Action):
         self.alpha_values = np.linspace(0, np.pi, 1000)  # Angle between rod axis and q
         print(f"q {len(self.q_values)}, alpha {len(self.alpha_values)}, L {len(self.L_Values)}; total grid point {len(self.alpha_values)* len(self.q_values)* len(self.L_Values)}")
         print("Building FQ interpolator")
-        Fq_interp, Fq_mesh = build_FQ_interpolator(self.q_values, self.alpha_values, self.L_Values)
+        Fq_interp, Fq_mesh = build_FQalpha_interpolator(self.q_values, self.alpha_values, self.L_Values)
         print("done building FQ interpolator")
         self.Fq_interp = Fq_interp
         self.particle_lengths = particle_lengths
