@@ -8,7 +8,7 @@ from rods_init import *
 from rods_tool import *
 
 
-def run_sampling(save_dump_detail, system_params, measurement_steps=10000, N_measurement=100):
+def run_sampling(save_dump_detail, system_params, q_values, measurement_steps=10000, N_measurement=100):
     folder = system_params["folder"]
     label = create_file_label(system_params)
     subfolder = f"{folder}/{label}"
@@ -47,7 +47,7 @@ def run_sampling(save_dump_detail, system_params, measurement_steps=10000, N_mea
     lc_action = MeasureLiquidCrystalOrder(subfolder, system_params, "sample", num_d=100)
     lc_writer = hoomd.write.CustomWriter(action=lc_action, trigger=hoomd.trigger.Periodic(measurement_steps))
     sim.operations.writers.append(lc_writer)
-    q_values = np.linspace(1.0, 20, 100)
+
     subfolder = f"{folder}/{label}"
     Iq_action = MeasureScattering(folder, subfolder, q_values, particle_lengths, system_params, "sample")
     Iq_writer = hoomd.write.CustomWriter(action=Iq_action, trigger=hoomd.trigger.Periodic(measurement_steps))
@@ -59,4 +59,8 @@ def run_sampling(save_dump_detail, system_params, measurement_steps=10000, N_mea
 
     lc_action.act_end()  # Finalize liquid crystal order measurement
     Iq_action.act_end()  # Finalize scattering measurement
+
+    if not save_dump_detail:
+        custom_writer = hoomd.write.CustomWriter(action=dumper, trigger=hoomd.trigger.Periodic(5000))
+        sim.operations.writers.append(custom_writer)
     dumper.act(sim.timestep)  # dump final config

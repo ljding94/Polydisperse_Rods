@@ -6,6 +6,7 @@ import os
 # Add parent directory to path so we can import from there
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "simulation"))
 from IQ import build_FQalpha_interpolator, FQalpha, PQ_single_rod_V2
+from rods_tool import create_file_label
 
 
 def plot_Iqxy_single_rod_exact(L, theta, phi, D=1.0):
@@ -307,7 +308,7 @@ def plot_Fq_interpolate():
     q_values = np.linspace(2, 15, 50)
     alpha_values = np.linspace(0, 0.5 * np.pi, 50)
     L_values = np.linspace(4, 6, 2)
-    Fq_interp, Fq_mesh = build_FQ_interpolator(q_values, alpha_values, L_values)
+    Fq_interp, Fq_mesh = build_FQalpha_interpolator(q_values, alpha_values, L_values)
 
     # Create meshgrid for plotting
     Q, Alpha, L = np.meshgrid(q_values, alpha_values, L_values, indexing="ij")
@@ -341,13 +342,13 @@ def plot_Fq_interpolate():
 def calc_PQ(q_values, pd_type, mean_ld, sigma):
     sum_PQ_V2 = np.zeros(len(q_values), dtype=np.float64)
     sum_V2 = 0
-    n_particles = 20
+    n_particles = 20 if sigma !=0 else 1
     particle_lengths = np.zeros(n_particles, dtype=np.float64)
     # 1. sample particle lengths
     if pd_type == "uniform":
-        particle_lengths = np.random.uniform(mean_ld - sigma, mean_ld + sigma, n_particles)
+        particle_lengths = mean_ld * np.random.uniform(1 - sigma, 1 + sigma, n_particles)
     elif pd_type == "normal":
-        particle_lengths = np.random.normal(mean_ld, sigma, n_particles)
+        particle_lengths = mean_ld * np.random.normal(1, sigma, n_particles)
         particle_lengths = np.clip(particle_lengths, 0, None)
     else:
         raise ValueError(f"Unknown pd_type: {pd_type}")
@@ -364,13 +365,53 @@ def calc_PQ(q_values, pd_type, mean_ld, sigma):
     return PQ
 
 
+def plot_PQ_demo():
+    q_values = np.logspace(np.log10(0.02), np.log10(20), 200)
+    #q_values = np.linspace(0.1, 20, 200)
+    pd_type = "uniform"
+    mean_ld = 4.0
+    sigma = 0.0
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+
+    # First subplot: varying mean_ld
+    for mean_ld in [0.0, 2.0, 4.0, 8.0, 16.0]:
+        PQ = calc_PQ(q_values, pd_type, mean_ld, sigma)
+        ax1.plot(q_values, PQ, label=f"mean_ld={mean_ld}")
+
+    ax1.set_xlabel("q")
+    ax1.set_ylabel("P(q)")
+    ax1.set_title(f"Varying mean L/D (σ={sigma})")
+    ax1.set_yscale("log")
+    ax1.set_xscale("log")
+    ax1.legend()
+    ax1.grid(True, alpha=0.3)
+
+    # Second subplot: varying sigma
+    for sigma_val in [0.0, 0.2, 0.5, 0.8]:
+        PQ = calc_PQ(q_values, pd_type, mean_ld, sigma_val)
+        ax2.plot(q_values, PQ, label=f"σ={sigma_val}")
+
+    ax2.set_xlabel("q")
+    ax2.set_ylabel("P(q)")
+    ax2.set_title(f"Varying σ (mean L/D={mean_ld})")
+    ax2.set_yscale("log")
+    ax2.set_xscale("log")
+    ax2.legend()
+    ax2.grid(True, alpha=0.3)
+
+    plt.tight_layout()
+    plt.savefig("PQ_demo.png")
+    plt.show()
+
+
 def get_Iq_from_file(filename):
     # Read the header (first 5 lines)
-    with open(filename, 'r') as f:
+    with open(filename, "r") as f:
         lines = f.readlines()
 
     # Parse pd_type as string from first line
-    pd_type = lines[0].split(',')[1].strip()
+    pd_type = lines[0].split(",")[1].strip()
 
     # Parse remaining numerical values
     header_data = np.genfromtxt(filename, delimiter=",", max_rows=4, skip_header=1)
@@ -388,9 +429,9 @@ def get_Iq_from_file(filename):
 def plot_sample_Iq(filename):
     # Read the file
     q, Iq, dIq, pd_type, N, phi, mean_ld, sigma = get_Iq_from_file(filename)
-    print("q",q)
+    print("q", q)
     print("Iq", Iq)
-    print("pd_type, N, phi, mean_ld, sigma",pd_type, N, phi, mean_ld, sigma)
+    print("pd_type, N, phi, mean_ld, sigma", pd_type, N, phi, mean_ld, sigma)
 
     plt.figure(figsize=(5, 5))
     plt.plot(q, Iq, "o", mfc="none", label=f"N={N}, phi={phi}, mean_ld={mean_ld}, sigma={sigma}", color="blue")
@@ -407,3 +448,84 @@ def plot_sample_Iq(filename):
     plt.tight_layout()
     plt.show()
     plt.close()
+
+
+def read_Iq_from_folder(folder, all_system_params):
+    all_params = []
+    param_names = ["phi", "mean_ld", "sigma"]
+    all_Iq = []
+    for system_params in all_system_params:
+        label = create_file_label(system_params)
+        filename = f"{folder}/stats_sample_Iq_{label}.csv"
+        if not os.path.exists(filename):
+            print(f"File not found: {filename}")
+            continue
+        q, Iq, dIq, pd_type, N, phi, mean_ld, sigma = get_Iq_from_file(filename)
+        all_Iq.append(Iq)
+        all_params.append((phi, mean_ld, sigma))
+
+    all_Iq = np.array(all_Iq)
+    all_params = np.array(all_params)
+
+    return q, all_Iq, all_params
+
+
+def plot_Iq_versus_params(folder, all_system_params):
+    q, all_Iq, all_params = read_Iq_from_folder(folder, all_system_params)
+    # plot 3 axs, each with all Iq versus q curves, but coloerd by different parameters
+
+    # Create figure with 3 subplots
+    fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+
+    # Parameter names and indices
+    param_names = ["φ (packing fraction)", "mean L/D", "σ (polydispersity)"]
+    param_indices = [0, 1, 2]  # phi, mean_ld, sigma
+
+    for ax_idx, (ax, param_name, param_idx) in enumerate(zip(axes, param_names, param_indices)):
+        # Get unique values and sort them for consistent coloring
+        param_values = all_params[:, param_idx]
+        unique_values = np.sort(np.unique(param_values))
+
+        # Create colormap normalization
+        if len(unique_values) > 1:
+            norm = plt.Normalize(vmin=unique_values.min(), vmax=unique_values.max())
+        else:
+            norm = plt.Normalize(vmin=0, vmax=1)
+
+        # Create colormap
+        colormap = plt.cm.get_cmap("rainbow", len(unique_values))
+
+        # Plot each I(q) curve colored by the parameter value
+        for i, (Iq, param_vals) in enumerate(zip(all_Iq, all_params)):
+            color = colormap(norm(param_vals[param_idx]))
+
+            # Create label with all parameter values
+            label = f"φ={param_vals[0]:.2f}, L/D={param_vals[1]:.1f}, σ={param_vals[2]:.2f}"
+
+            ax.plot(q, Iq, "-", color=color, alpha=0.7, markersize=4, linewidth=1.5, label=label if ax_idx == 0 else "")  # Only show legend on first subplot
+
+        # Formatting
+        ax.set_xlabel("q", fontsize=12)
+        ax.set_ylabel("I(q)", fontsize=12)
+        ax.set_title(f"I(q) colored by {param_name}", fontsize=14, fontweight="bold")
+        ax.set_yscale("log")
+        ax.set_xscale("log")
+        ax.grid(True, which="both", linestyle="--", linewidth=0.5, alpha=0.7)
+
+        # Add colorbar for each subplot
+        sm = plt.cm.ScalarMappable(cmap=colormap, norm=norm)
+        sm.set_array([])
+        cbar = plt.colorbar(sm, ax=ax)
+        cbar.set_label(param_name, fontsize=11)
+
+        # Set reasonable axis limits
+        ax.set_ylim(bottom=1e-6)
+
+    plt.tight_layout()
+
+    # Save the plot
+    output_filename = f"{folder}/Iq_versus_params_comparison.png"
+    plt.savefig(output_filename, dpi=300, bbox_inches="tight")
+
+    print(f"Plot saved as: {output_filename}")
+    plt.show()

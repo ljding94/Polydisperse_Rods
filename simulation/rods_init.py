@@ -142,6 +142,7 @@ def run_initialization(save_dump_detail, system_params, randomization_steps=5000
 
     dumper = DumpTXT(subfolder, type_lengths, "compress")  # Use aspects for L/D
     if save_dump_detail:
+        print("Saving detailed dumps...")
         custom_writer = hoomd.write.CustomWriter(action=dumper, trigger=hoomd.trigger.Periodic(5000))
         sim.operations.writers.append(custom_writer)
 
@@ -232,6 +233,10 @@ def run_initialization(save_dump_detail, system_params, randomization_steps=5000
     print("translate acceptance rate:", mc.translate_moves[0] / sum(mc.translate_moves))
     print("rotate acceptance rate:", mc.rotate_moves[0] / sum(mc.rotate_moves))
     print("mote size:", mc.a["type_0"], mc.d["type_0"])
+
+    if not save_dump_detail:
+        custom_writer = hoomd.write.CustomWriter(action=dumper, trigger=hoomd.trigger.Periodic(5000))
+        sim.operations.writers.append(custom_writer)
 
     dumper.act(sim.timestep)  # dump final config
 
