@@ -58,7 +58,7 @@ def run_sampling(save_dump_detail, system_params, q_values, measurement_steps=10
         sim.run(measurement_steps)
 
     lc_action.act_end()  # Finalize liquid crystal order measurement
-    Iq_action.act_end()  # Finalize scattering measurement
+    #Iq_action.act_end()  # Finalize scattering measurement
 
     if not save_dump_detail:
         custom_writer = hoomd.write.CustomWriter(action=dumper, trigger=hoomd.trigger.Periodic(5000))

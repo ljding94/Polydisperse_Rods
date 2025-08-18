@@ -204,6 +204,27 @@ class MeasureScattering(hoomd.custom.Action):
             line = f"{timestep},Iq," + ",".join([f"{Iq[i]}" for i in range(len(Iq))]) + "\n"
             f.write(line)
 
+        Iq_mean = np.mean(self.Iq, axis=0)
+        Iq_std = np.std(self.Iq, axis=0)
+        sqrtM = np.sqrt(len(self.Iq))
+        dIq = Iq_std / sqrtM  # Standard error of the mean
+
+        # write tosummary file
+        summary_file = f"{self.stats_filename}"
+        with open(summary_file, "w") as f:
+            # Always write the metadata/header (summary file is opened with "w" each call,
+            # so we must rewrite the header every time to keep it consistent)
+            f.write("pd_type," + f"{self.system_params['pd_type']}\n")
+            f.write("N," + f"{self.system_params['N']}\n")
+            f.write("phi," + f"{self.system_params['phi']}\n")
+            f.write("mean_ld," + f"{self.system_params['mean_ld']}\n")
+            f.write("sigma," + f"{self.system_params['sigma']}\n")
+            f.write("q,Iq,dIq\n")
+            # write the current averaged Iq and its error (will be overwritten on subsequent calls)
+            for i in range(len(self.q_values)):
+                f.write(f"{self.q_values[i]},{Iq_mean[i]},{dIq[i]}\n")
+
+    '''
     def act_end(self):
         # Append statistics, mean, std, to file
         Iq_mean = np.mean(self.Iq, axis=0)
@@ -226,3 +247,4 @@ class MeasureScattering(hoomd.custom.Action):
             f.write("q,Iq,dIq\n")
             for i in range(len(self.q_values)):
                 f.write(f"{self.q_values[i]},{Iq_mean[i]},{dIq[i]}\n")
+    '''

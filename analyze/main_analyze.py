@@ -19,13 +19,15 @@ def main():
         filename = "../data_local/data_pool/stats_sample_Iq_prec_run0_uniform_N100_phi0.10_mean_ld4.00_sigma0.10.csv"
         plot_sample_Iq(filename)
 
-    if 1:
-        plot_PQ_demo()
     if 0:
-        folder = "../data/20250731"
-        phis = np.arange(0.05, 0.31, 0.05)
-        mean_lds = np.arange(1.00, 4.10, 0.40)
-        sigmas = np.arange(0.00, 0.21, 0.02)
+        plot_PQ_demo()
+    if 1:
+        #folder = "../data/20250731"
+        folder = "../data/20250807"
+        #phis = np.arange(0.03, 0.31, 0.03)
+        phis = [0.27]
+        mean_lds = np.arange(1.00, 6.10, 0.50)
+        sigmas = [0.00]
         all_system_params = []
         for phi in phis:
             for mean_ld in mean_lds:
@@ -34,7 +36,8 @@ def main():
                         "run_type": "prec",
                         "run_num": 0,
                         "pd_type": "uniform",
-                        "N": 10000,
+                        #"pd_type": "normal",
+                        "N": 20000,
                         "phi": phi,
                         "mean_ld": mean_ld,
                         "sigma": sigma,

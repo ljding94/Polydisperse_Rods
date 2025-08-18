@@ -509,7 +509,7 @@ def plot_Iq_versus_params(folder, all_system_params):
         ax.set_ylabel("I(q)", fontsize=12)
         ax.set_title(f"I(q) colored by {param_name}", fontsize=14, fontweight="bold")
         ax.set_yscale("log")
-        ax.set_xscale("log")
+        #ax.set_xscale("log")
         ax.grid(True, which="both", linestyle="--", linewidth=0.5, alpha=0.7)
 
         # Add colorbar for each subplot
