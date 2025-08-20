@@ -23,10 +23,11 @@ def main():
         plot_PQ_demo()
     if 1:
         #folder = "../data/20250731"
-        folder = "../data/20250807"
-        #phis = np.arange(0.03, 0.31, 0.03)
-        phis = [0.27]
-        mean_lds = np.arange(1.00, 6.10, 0.50)
+        folder = "../data/20250818"
+        phis = np.arange(0.03, 0.31, 0.03)
+        #phis = [0.27]
+        #mean_lds = np.arange(1.00, 6.10, 0.50)
+        mean_lds = [2.0]
         sigmas = [0.00]
         all_system_params = []
         for phi in phis:
@@ -37,7 +38,7 @@ def main():
                         "run_num": 0,
                         "pd_type": "uniform",
                         #"pd_type": "normal",
-                        "N": 20000,
+                        "N": 10000,
                         "phi": phi,
                         "mean_ld": mean_ld,
                         "sigma": sigma,

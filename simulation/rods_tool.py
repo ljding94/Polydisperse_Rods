@@ -182,7 +182,9 @@ class MeasureScattering(hoomd.custom.Action):
             return
 
         positions = snap.particles.position
-        directors = rowan.rotate(snap.particles.orientation, np.array([1.0, 0.0, 0.0]))
+        # Rod directors (body-frame axis along z)
+        local_axis = np.array([0.0, 0.0, 1.0])
+        directors = rowan.rotate(snap.particles.orientation, local_axis)
         particle_lengths = self.particle_lengths
 
         Iq = calculate_IQ(positions, directors, particle_lengths, self.q_values, self.Fq_interp)

@@ -502,11 +502,11 @@ def plot_Iq_versus_params(folder, all_system_params):
             # Create label with all parameter values
             label = f"φ={param_vals[0]:.2f}, L/D={param_vals[1]:.1f}, σ={param_vals[2]:.2f}"
 
-            ax.plot(q, Iq, "-", color=color, alpha=0.7, markersize=4, linewidth=1.5, label=label if ax_idx == 0 else "")  # Only show legend on first subplot
+            ax.plot(q, q *Iq, "-", color=color, alpha=0.7, markersize=4, linewidth=1.5, label=label if ax_idx == 0 else "")  # Only show legend on first subplot
 
         # Formatting
         ax.set_xlabel("q", fontsize=12)
-        ax.set_ylabel("I(q)", fontsize=12)
+        ax.set_ylabel(r"$q I(q)$", fontsize=12)
         ax.set_title(f"I(q) colored by {param_name}", fontsize=14, fontweight="bold")
         ax.set_yscale("log")
         #ax.set_xscale("log")
