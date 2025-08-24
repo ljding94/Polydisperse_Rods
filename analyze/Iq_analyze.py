@@ -366,8 +366,8 @@ def calc_PQ(q_values, pd_type, mean_ld, sigma):
 
 
 def plot_PQ_demo():
-    q_values = np.logspace(np.log10(0.02), np.log10(20), 200)
-    #q_values = np.linspace(0.1, 20, 200)
+    #q_values = np.logspace(np.log10(0.02), np.log10(20), 200)
+    q_values = np.linspace(0.1, 12.5, 80)
     pd_type = "uniform"
     mean_ld = 4.0
     sigma = 0.0
@@ -383,7 +383,7 @@ def plot_PQ_demo():
     ax1.set_ylabel("P(q)")
     ax1.set_title(f"Varying mean L/D (σ={sigma})")
     ax1.set_yscale("log")
-    ax1.set_xscale("log")
+    #ax1.set_xscale("log")
     ax1.legend()
     ax1.grid(True, alpha=0.3)
 
@@ -469,19 +469,42 @@ def read_Iq_from_folder(folder, all_system_params):
 
     return q, all_Iq, all_params
 
+def calc_Pq_for_params(q, all_system_params):
+    all_Pq = []
+    cache = {}
+    for system_params in all_system_params:
+        pd_type = system_params["pd_type"]
+        mean_ld = system_params["mean_ld"]
+        sigma = system_params["sigma"]
+        key = (pd_type, float(mean_ld), float(sigma))
+        if key in cache:
+            Pq = cache[key]
+        else:
+            print(f"Calculating P(q) for {key}")
+            Pq = calc_PQ(q, pd_type, mean_ld, sigma)
+            cache[key] = Pq
+        all_Pq.append(Pq)
+    return np.array(all_Pq)
+
 
 def plot_Iq_versus_params(folder, all_system_params):
     q, all_Iq, all_params = read_Iq_from_folder(folder, all_system_params)
     # plot 3 axs, each with all Iq versus q curves, but coloerd by different parameters
+    #all_Pq = calc_Pq_for_params(q, all_system_params)
 
-    # Create figure with 3 subplots
-    fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+    # Create figure with 2 rows x 3 columns (top row: I(q), bottom row: I(q)/P(q))
+    fig, axes = plt.subplots(2, 3, figsize=(18, 12))
+    top_axes = axes[0, :]
+    bot_axes = axes[1, :]
 
     # Parameter names and indices
     param_names = ["φ (packing fraction)", "mean L/D", "σ (polydispersity)"]
     param_indices = [0, 1, 2]  # phi, mean_ld, sigma
 
-    for ax_idx, (ax, param_name, param_idx) in enumerate(zip(axes, param_names, param_indices)):
+    for ax_idx, (param_name, param_idx) in enumerate(zip(param_names, param_indices)):
+        ax_top = top_axes[ax_idx]
+        ax_bot = bot_axes[ax_idx]
+
         # Get unique values and sort them for consistent coloring
         param_values = all_params[:, param_idx]
         unique_values = np.sort(np.unique(param_values))
@@ -502,29 +525,46 @@ def plot_Iq_versus_params(folder, all_system_params):
             # Create label with all parameter values
             label = f"φ={param_vals[0]:.2f}, L/D={param_vals[1]:.1f}, σ={param_vals[2]:.2f}"
 
-            ax.plot(q, q *Iq, "-", color=color, alpha=0.7, markersize=4, linewidth=1.5, label=label if ax_idx == 0 else "")  # Only show legend on first subplot
+            # Top: I(q)
+            ax_top.plot(q, Iq, "-", color=color, alpha=0.7, markersize=4, linewidth=1.5,
+                        label=label if (ax_idx == 0 and i == 0) else "")  # only show one legend entry to avoid clutter
 
-        # Formatting
-        ax.set_xlabel("q", fontsize=12)
-        ax.set_ylabel(r"$q I(q)$", fontsize=12)
-        ax.set_title(f"I(q) colored by {param_name}", fontsize=14, fontweight="bold")
-        ax.set_yscale("log")
-        #ax.set_xscale("log")
-        ax.grid(True, which="both", linestyle="--", linewidth=0.5, alpha=0.7)
+            # Bottom: I(q)/P(q)
+            try:
+                Pq = all_Pq[i]
+            except Exception:
+                # Fallback: avoid crash if indexing mismatches
+                Pq = np.ones_like(q)
 
-        # Add colorbar for each subplot
+            # avoid division by zero or tiny Pq
+            #safe_Pq = np.maximum(Pq, 1e-12)
+            #I_over_P = Iq / safe_Pq
+            #ax_bot.plot(q, I_over_P, "-", color=color, alpha=0.7, markersize=4, linewidth=1.5,label=label if (ax_idx == 0 and i == 0) else "")
+
+        # Top subplot formatting
+        ax_top.set_xlabel("q", fontsize=12)
+        ax_top.set_ylabel(r"$I(q)$", fontsize=12)
+        ax_top.set_title(f"I(q) colored by {param_name}", fontsize=14, fontweight="bold")
+        ax_top.set_yscale("log")
+        ax_top.grid(True, which="both", linestyle="--", linewidth=0.5, alpha=0.7)
+
+        # Bottom subplot formatting
+        ax_bot.set_xlabel("q", fontsize=12)
+        ax_bot.set_ylabel(r"$I(q)/P(q)$", fontsize=12)
+        ax_bot.set_title(f"I(q) / P(q) colored by {param_name}", fontsize=14, fontweight="bold")
+        ax_bot.grid(True, which="both", linestyle="--", linewidth=0.5, alpha=0.7)
+
+        # Add colorbar for each column (use same norm and colormap for top & bottom)
         sm = plt.cm.ScalarMappable(cmap=colormap, norm=norm)
         sm.set_array([])
-        cbar = plt.colorbar(sm, ax=ax)
+        cbar = plt.colorbar(sm, ax=[ax_top])
         cbar.set_label(param_name, fontsize=11)
-
-        # Set reasonable axis limits
-        ax.set_ylim(bottom=1e-6)
 
     plt.tight_layout()
 
     # Save the plot
-    output_filename = f"{folder}/Iq_versus_params_comparison.png"
+    sys_param = all_system_params[0]
+    output_filename = f"{folder}/Iq_versus_params_comparison_{sys_param['pd_type']}.png"
     plt.savefig(output_filename, dpi=300, bbox_inches="tight")
 
     print(f"Plot saved as: {output_filename}")

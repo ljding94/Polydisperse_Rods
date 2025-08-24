@@ -23,7 +23,7 @@ def main(args):
 
     elif args.run_type == "rand":
         system_params["phi"] = np.random.uniform(0.01, 0.3)
-        system_params["mean_ld"] = np.random.uniform(1.0, 4.0)
+        system_params["mean_ld"] = np.random.uniform(0.0, 6.0)
         system_params["sigma"] = np.random.uniform(0.00, 0.50)
 
     label = create_file_label(system_params)
