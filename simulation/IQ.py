@@ -3,7 +3,7 @@ from scipy.special import j1, roots_legendre
 from scipy.interpolate import RegularGridInterpolator
 
 
-def calculate_IQ(positions, directors, particle_lengths, q_values, Fq_interp, num_directions=100):
+def calculate_IQ(positions, directors, particle_types, type_Vs, q_values, type_Fq_interps, num_directions=100):
     """
     Calculate the 1D isotropic scattering intensity I(q) for a system of spherocylinders,
     normalized by <V^2> (mean square volume over all particles).
@@ -13,12 +13,14 @@ def calculate_IQ(positions, directors, particle_lengths, q_values, Fq_interp, nu
         Positions of the N particles (x, y, z).
     directors : np.ndarray (N, 3)
         Director vectors (orientations) of the N particles (ux, uy, uz).
-    particle_lengths : np.ndarray (N,)
-        Lengths L of the cylindrical parts for each particle (D=1 assumed).
+    particle_types : np.ndarray (N,)
+        Type indices of the N particles to look up their dimensions.
+    type_Vs : np.ndarray (num_types,)
+        Volumes V of each particle type.
     q_values : np.ndarray or list
         Array of q magnitudes where to compute I(q).
-    Fq_interp : RegularGridInterpolator
-        Interpolator for FQ(q, alpha, L).
+    type_Fq_interps : list of RegularGridInterpolator
+        List of interpolators for FQ(q, alpha) for each particle type.
     num_directions : int, optional
         Number of random directions for orientational averaging (default: 1000).
 
@@ -36,11 +38,8 @@ def calculate_IQ(positions, directors, particle_lengths, q_values, Fq_interp, nu
     if np.any(dir_norms == 0):
         raise ValueError("Director vectors cannot be zero")
     directors_norm = directors / dir_norms[:, np.newaxis]
-
-    # Compute volumes: V = π (D/2)^2 L + (4/3) π (D/2)^3, D=1
-    r = 0.5  # D=1
-    V = np.pi * r**2 * particle_lengths + (4 / 3) * np.pi * r**3
-    sum_V2 = np.sum(V**2)  # Normalization factor <V^2>
+    particle_Vs = type_Vs[particle_types]
+    sum_V2 = np.sum(particle_Vs**2)  # Normalization factor <V^2>
     if sum_V2 == 0:
         raise ValueError("Sum of squared volumes is zero")
 
@@ -62,19 +61,27 @@ def calculate_IQ(positions, directors, particle_lengths, q_values, Fq_interp, nu
     q_hats[:, 2] = np.cos(qtheta_grid)
 
     for iq, q in enumerate(q_values):
-        # Compute cos_alphas = |directors_norm · q_hats| (N, num_d)
         cos_alphas = np.abs(np.dot(directors_norm, q_hats.T))
         alphas = np.arccos(cos_alphas)  # (N, num_d)
 
-        # Prepare interpolation points (N * num_d, 3)
-        qs_all = np.full(N * num_d, q)
-        alphas_all = alphas.ravel()
-        Ls_all = np.tile(particle_lengths, num_d)
-        all_points = np.column_stack((qs_all, alphas_all, Ls_all))
+        # Prepare interpolation points (N * num_d, 4)
+        # Note: We prepare points per type below
 
-        # Interpolate all F_js
-        F_all = Fq_interp(all_points)
-        F_js = F_all.reshape(N, num_d)  # (N, num_d)
+        F_js = np.zeros((N, num_d), dtype=np.complex128)  # F per particle per direction
+        for itype in range(len(type_Fq_interps)):
+            mask = particle_types == itype
+            num_particles_itype = np.sum(mask)
+            if num_particles_itype == 0:
+                continue
+            Fq_interp = type_Fq_interps[itype]
+            # Select alphas for this type
+            alphas_itype = alphas[mask, :]  # (num_particles_itype, num_d)
+            qs_all_itype = np.full(num_particles_itype * num_d, q)
+            alphas_all_itype = alphas_itype.ravel()
+            all_points_itype = np.column_stack((qs_all_itype, alphas_all_itype))
+            F_itype = Fq_interp(all_points_itype)
+            F_reshaped = F_itype.reshape(num_particles_itype, num_d)
+            F_js[mask, :] = F_reshaped
 
         # Compute q_vecs (num_d, 3)
         q_vecs = q * q_hats
@@ -83,7 +90,8 @@ def calculate_IQ(positions, directors, particle_lengths, q_values, Fq_interp, nu
         dots = np.dot(positions, q_vecs.T)  # (N, num_d)
         phases = np.exp(1j * dots)  # (N, num_d)
 
-        # Total amplitude: sum_i V_i F_i e^(i q · r_i)
+        # Total amplitude: sum_i F_i e^(i q · r_i)
+        # V already in the F_js
         total_amps = np.sum(F_js * phases, axis=0)  # (num_d,)
 
         # I(q, theta, phi) = |total_amps|^2 / sum_V2
@@ -95,7 +103,7 @@ def calculate_IQ(positions, directors, particle_lengths, q_values, Fq_interp, nu
     return I_qs
 
 
-def calculate_PQ(q_values, particle_lengths, Fq_interp, num_mu=50):
+def calculate_PQ(q_values, particle_types, type_Vs, type_Fq_interps, num_mu=50):
     """
     Calculate the polydisperse orientationally averaged form factor P(q) = <F(q)^2> / <V^2>,
     where < > denotes average over particles (weighted by V^2) and orientations.
@@ -103,10 +111,12 @@ def calculate_PQ(q_values, particle_lengths, Fq_interp, num_mu=50):
     Parameters:
     q_values : np.ndarray or list
         Array of q magnitudes where to compute P(q).
-    particle_lengths : np.ndarray (N,)
-        Lengths L of the cylindrical parts for each particle (D=1 assumed).
-    Fq_interp : RegularGridInterpolator
-        Interpolator for FQ(q, alpha, L).
+    particle_types : np.ndarray (N,)
+        Type indices of the N particles.
+    type_Vs : np.ndarray (num_types,)
+        Volumes V of each particle type.
+    type_Fq_interps : list of RegularGridInterpolator
+        List of interpolators for FQ(q, alpha) for each particle type.
     num_mu : int, optional
         Number of points for uniform mu = cos(alpha) integration from 0 to 1 (default: 50).
 
@@ -114,15 +124,12 @@ def calculate_PQ(q_values, particle_lengths, Fq_interp, num_mu=50):
     np.ndarray
         P(q) for each q in q_values.
     """
-    N = len(particle_lengths)
+    N = len(particle_types)
     q_values = np.asarray(q_values)
     P_qs = np.zeros(len(q_values), dtype=np.float64)
 
-    # Compute volumes: V = π (D/2)^2 L + (4/3) π (D/2)^3, D=1
-    r = 0.5  # D=1
-    V = np.pi * r**2 * particle_lengths + (4 / 3) * np.pi * r**3
-    V2 = V**2
-    sum_V2 = np.sum(V2)  # Normalization factor <V^2>
+    particle_Vs = type_Vs[particle_types]
+    sum_V2 = np.sum(particle_Vs**2)  # Normalization factor <V^2>
     if sum_V2 == 0:
         raise ValueError("Sum of squared volumes is zero")
 
@@ -131,24 +138,23 @@ def calculate_PQ(q_values, particle_lengths, Fq_interp, num_mu=50):
     alpha_mu = np.arccos(mu)  # alpha decreases from pi/2 to 0 as mu increases
 
     for iq, q in enumerate(q_values):
-        # Prepare interpolation points for all particles and mu (N * num_mu, 3)
-        qs_all = np.full(N * num_mu, q)
-        alphas_all = np.tile(alpha_mu, N)  # Repeat alpha_mu for each particle
-        Ls_all = np.repeat(particle_lengths, num_mu)  # Repeat each L_i for num_mu times
-        all_points = np.column_stack((qs_all, alphas_all, Ls_all))
-
-        # Interpolate all FQ values
-        FQ_all = Fq_interp(all_points)
-        FQ_reshaped = FQ_all.reshape(N, num_mu)  # (N, num_mu)
-
-        # Compute [FQ / V]^2 for each particle and mu
-        norm_FQ2 = (FQ_reshaped / V[:, np.newaxis]) ** 2  # (N, num_mu)
-
-        # Average over mu for each particle: ∫_0^1 [FQ/V]^2 d mu ≈ mean over uniform mu grid
-        P_i = np.mean(norm_FQ2, axis=1)  # (N,)
+        P_i = np.zeros(N)
+        for itype in range(len(type_Fq_interps)):
+            mask = particle_types == itype
+            if np.sum(mask) == 0:
+                continue
+            Fq_interp = type_Fq_interps[itype]
+            # Prepare interpolation points for this type
+            alphas_all = alpha_mu
+            qs_all = np.full(num_mu, q)
+            all_points = np.column_stack((qs_all, alphas_all))
+            F_all = Fq_interp(all_points)
+            # Compute average |F / V|^2 over orientations
+            P_type = np.mean((F_all / type_Vs[itype]) ** 2)
+            P_i[mask] = P_type
 
         # Polydisperse average: ∑ V_i^2 P_i / ∑ V_i^2
-        P_qs[iq] = np.sum(V2 * P_i) / sum_V2
+        P_qs[iq] = np.sum(particle_Vs**2 * P_i) / sum_V2
 
     return P_qs
 
@@ -158,7 +164,7 @@ n = 32
 x, weights = roots_legendre(n)
 
 
-def FQalpha(q, alpha, D, L):
+def FQalpha(q, alpha, L, D):
     """
     Optimized form factor amplitude FQalpha(q, alpha) for a spherocylinder using Gauss-Legendre.
     """
@@ -199,38 +205,47 @@ def FQalpha(q, alpha, D, L):
     return cyl_term + cap_term
 
 
-def FQalpha_grid(q_values, alpha_values, L_values):
+def FQalpha_grid(q_values, alpha_values, L, D):
     """
-    Compute the form factor amplitude FQalpha(q, alpha) on a grid of q, alpha, and L/D values (D=1).
+    Compute the form factor amplitude FQalpha(q, alpha) on a grid of q, alpha, for particle of dimension (L,D)
     """
-    Fq_mesh = np.zeros((len(q_values), len(alpha_values), len(L_values)), dtype=np.float64)
+
+    Fq_mesh = np.zeros((len(q_values), len(alpha_values)), dtype=np.float64)
     for i, q in enumerate(q_values):
         for j, alpha in enumerate(alpha_values):
-            for k, L in enumerate(L_values):
-                Fq_mesh[i, j, k] = FQalpha(q, alpha, 1.0, L)
+            Fq_mesh[i, j] = FQalpha(q, alpha, L, D)
     return Fq_mesh
 
 
-def build_FQalpha_interpolator(q_values, alpha_values, L_values):
+def build_FQalpha_interpolator(q_values, alpha_values, type_Ls, type_Ds):
     """
     Build and return the RegularGridInterpolator object for FQ.
+    for each particle type, we build an interpolator over (q, alpha) only.
 
     Parameters:
     q_values: np.array of q points for the grid
     alpha_values: np.array of alpha points (radians, typically 0 to pi/2)
-    L_values: np.array of L points
 
     Returns:
     RegularGridInterpolator object that interpolates over (q, alpha, L)
     """
-    Fq_mesh = FQalpha_grid(q_values, alpha_values, L_values)
+    type_Fq_interps = []
+    type_Fq_meshs = []
+    for i in range(len(type_Ls)):
+        L = type_Ls[i]
+        D = type_Ds[i]
+        print(f"Building FQ interpolator for type {i}, L={L}, D={D}")
 
-    # Create and return the 3D interpolator
-    Fq_interp = RegularGridInterpolator(
-        (q_values, alpha_values, L_values), Fq_mesh, bounds_error=False, fill_value=0.0, method="linear"  # Or np.nan, but 0 for extrapolation  # 'linear' is default, 'nearest' for speed if needed
-    )
+        Fq_mesh = FQalpha_grid(q_values, alpha_values, L, D)
 
-    return Fq_interp, Fq_mesh
+        # Create and return the 3D interpolator
+        Fq_interp = RegularGridInterpolator(
+            (q_values, alpha_values), Fq_mesh, bounds_error=False, fill_value=0.0, method="linear"  # Or np.nan, but 0 for extrapolation  # 'linear' is default, 'nearest' for speed if needed
+        )
+        type_Fq_interps.append(Fq_interp)
+        type_Fq_meshs.append(Fq_mesh)
+
+    return type_Fq_interps, type_Fq_meshs
 
 
 def PQ_single_rod_V2(q_values, L, D=1.0):

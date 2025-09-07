@@ -18,13 +18,16 @@ def main(args):
     if args.run_type == "prec":
 
         system_params["phi"] = args.phi
-        system_params["mean_ld"] = args.mean_ld
-        system_params["sigma"] = args.sigma
+        system_params["meanL"] = args.meanL
+        # meanD = 1.0 as unit of length
+        system_params["sigmaL"] = args.sigmaL
+        system_params["sigmaD"] = args.sigmaD
 
     elif args.run_type == "rand":
         system_params["phi"] = np.random.uniform(0.01, 0.3)
-        system_params["mean_ld"] = np.random.uniform(0.0, 6.0)
-        system_params["sigma"] = np.random.uniform(0.00, 0.50)
+        system_params["meanL"] = np.random.uniform(0.0, 6.0)
+        system_params["sigmaL"] = np.random.uniform(0.00, 0.50)
+        system_params["sigmaD"] = np.random.uniform(0.00, 0.20)
 
     label = create_file_label(system_params)
     folder = f"{args.folder}/{label}"
@@ -36,7 +39,7 @@ def main(args):
         system_params=system_params,
         randomization_steps=5000,
         max_compression_steps=50000,
-        num_compression_stage=10,
+        num_compression_stage=2,
     )
 
     # render(folder, "compressed.gsd", frame=-1) # no need, confirm OVITO works
@@ -65,8 +68,9 @@ if __name__ == "__main__":
 
     arg_required = False
     parser.add_argument("--phi", type=float, required=arg_required, help="Packing fraction.")
-    parser.add_argument("--mean_ld", type=float, required=arg_required, help="Mean aspect ratio (L/d).")
-    parser.add_argument("--sigma", type=float, required=arg_required, help="Polydispersity (standard deviation).")
+    parser.add_argument("--meanL", type=float, required=arg_required, help="Mean aspect ratio (L/d).")
+    parser.add_argument("--sigmaL", type=float, required=arg_required, help="Polydispersity (standard deviation).")
+    parser.add_argument("--sigmaD", type=float, required=arg_required, help="Diameter polydispersity (standard deviation).")
 
     parser.add_argument("--save_dump_detail", type=bool, default=False, help="save lots of dump file or not.")
 
@@ -85,4 +89,5 @@ if __name__ == "__main__":
     # N500 phi0.3: 168s
 
 # sample usage:
-# python3 main_simulation.py --run_type prec --run_num 0 --pd_type uniform --N 100 --phi 0.10 --mean_ld 4.00 --sigma 0.10 --folder /Users/ldq/Work/Polydisperse_Rods/data_local/data_pool --save_dump_detail 1
+# conda activate hoomd-env
+# python3 main_simulation.py --run_type prec --run_num 0 --pd_type uniform --N 100 --phi 0.10 --meanL 4.00 --sigmaL 0.10 --sigmaD 0.10 --folder /Users/ldq/Work/Polydisperse_Rods/data_local/data_pool --save_dump_detail 1

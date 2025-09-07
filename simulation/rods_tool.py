@@ -14,9 +14,10 @@ def create_file_label(system_params):
     N = system_params["N"]
     if run_type == "prec":
         phi = system_params["phi"]
-        mean_ld = system_params["mean_ld"]
-        sigma = system_params["sigma"]
-        label = f"{run_type}_run{run_num:d}_{pd_type}_N{N:d}_phi{phi:.2f}_mean_ld{mean_ld:.2f}_sigma{sigma:.2f}"
+        meanL = system_params["meanL"]
+        sigmaL = system_params["sigmaL"]
+        sigmaD = system_params["sigmaD"]
+        label = f"{run_type}_run{run_num:d}_{pd_type}_N{N:d}_phi{phi:.2f}_meanL{meanL:.2f}_sigmaL{sigmaL:.2f}_sigmaD{sigmaD:.2f}"
     elif run_type == "rand":
         label = f"{run_type}_run{run_num:d}_{pd_type}_N{N:d}"
         # set random parameters
@@ -27,8 +28,11 @@ def create_file_label(system_params):
 
 # Custom action for dumping to TXT file
 class DumpTXT(hoomd.custom.Action):
-    def __init__(self, subfolder, type_lengths, label):
-        self.type_lengths = type_lengths  # Per-particle aspects (L/d)
+    def __init__(self, subfolder, type_Ls, type_Ds, type_Vs, label):
+        self.type_Ls = type_Ls  # Per-particle length
+        self.type_Ds = type_Ds  # Per-particle diameter
+        self.type_Vs = type_Vs
+
         # it's a list type_length[typeid] = L/d
         self.subfolder = subfolder
         self.label = label
@@ -47,18 +51,18 @@ class DumpTXT(hoomd.custom.Action):
             f.write(f"{-box[0]/2} {box[0]/2}\n")
             f.write(f"{-box[1]/2} {box[1]/2}\n")
             f.write(f"{-box[2]/2} {box[2]/2}\n")
-            f.write("ITEM: ATOMS id type x y z quatw quati quatj quatk shapex shapey shapez l_d\n")
+            f.write("ITEM: ATOMS id type x y z quatw quati quatj quatk shapex shapey shapez volume\n")
             for i in range(snap.particles.N):
                 pos = snap.particles.position[i]
                 orient = snap.particles.orientation[i]  # [w, i, j, k]
                 typeid = snap.particles.typeid[i]
-                shapex = 1.0
-                shapey = 1.0
-                shapez = 2.0 * self.type_lengths[typeid]
+                shapex = 1.0 * self.type_Ds[typeid]
+                shapey = 1.0 * self.type_Ds[typeid]
+                shapez = 2.0 * self.type_Ls[typeid]
                 # reference: https://www.ovito.org/manual/advanced_topics/aspherical_particles.html
-                # for cylinder, shapex, shapey are the radius in x and y, and shapez is the length along z
-                ld = self.type_lengths[typeid]
-                f.write(f"{i} {typeid} {pos[0]} {pos[1]} {pos[2]} {orient[0]} {orient[1]} {orient[2]} {orient[3]} {shapex} {shapey} {shapez} {ld} \n")
+                # for cylinder, shapex, shapey are the radius in x and y, and shapez is the length along z, but a factor of 0.5 is multiplied when reading
+                volume = self.type_Vs[typeid]
+                f.write(f"{i} {typeid} {pos[0]} {pos[1]} {pos[2]} {orient[0]} {orient[1]} {orient[2]} {orient[3]} {shapex} {shapey} {shapez} {volume} \n")
 
 
 class MeasureLiquidCrystalOrder(hoomd.custom.Action):
@@ -66,10 +70,10 @@ class MeasureLiquidCrystalOrder(hoomd.custom.Action):
 
     def __init__(self, subfolder, system_params, label, num_d=100):
         self.filename = f"{subfolder}/{label}_LC_order.csv"
-        self.mean_ld = system_params["mean_ld"]  # For d range; D=1 fixed
+        self.meanL = system_params["meanL"]  # For d range; D=1 fixed
         self.num_d = num_d  # Resolution for d optimization
         data = np.load(f"{subfolder}/particle_data.npz")
-        self.total_volume = data["total_volume"]
+        self.total_volume = data["total_V"]
         self._header_written = False
         self.nematicS = []
         self.smecticTau = []
@@ -104,8 +108,8 @@ class MeasureLiquidCrystalOrder(hoomd.custom.Action):
         s = positions @ n
 
         # Optimize d over plausible range (around mean total length ± margin)
-        d_min = 0.5 * self.mean_ld + 1
-        d_max = 1.5 * self.mean_ld + 1
+        d_min = 0.5 * self.meanL + 1
+        d_max = 1.5 * self.meanL + 1
         d_values = np.linspace(d_min, d_max, self.num_d)
 
         tau_max = 0.0
@@ -129,8 +133,9 @@ class MeasureLiquidCrystalOrder(hoomd.custom.Action):
                 f.write("pd_type," + f"{self.system_params['pd_type']}\n")
                 f.write("N," + f"{self.system_params['N']}\n")
                 f.write("phi," + f"{self.system_params['phi']}\n")
-                f.write("mean_ld," + f"{self.system_params['mean_ld']}\n")
-                f.write("sigma," + f"{self.system_params['sigma']}\n")
+                f.write("meanL," + f"{self.system_params['meanL']}\n")
+                f.write("sigmaL," + f"{self.system_params['sigmaL']}\n")
+                f.write("sigmaD," + f"{self.system_params['sigmaD']}\n")
                 f.write("step,S,tau,d,phi\n")
                 self._header_written = True
             f.write(f"{timestep},{S},{tau_max},{d_opt},{phi}\n")
@@ -159,20 +164,25 @@ class MeasureLiquidCrystalOrder(hoomd.custom.Action):
 class MeasureScattering(hoomd.custom.Action):
     r"""Compute scattering function I(Q) and append to a CSV file."""
 
-    def __init__(self, folder, subfolder, q_values, particle_lengths, system_params, label):
+    def __init__(self, folder, subfolder, q_values, particle_types, type_Ls, type_Ds, type_Vs, system_params, label):
         self.system_params = system_params
         self.filename = f"{subfolder}/{label}_Iq.csv"
         self.stats_filename = f"{folder}/stats_{label}_Iq_{create_file_label(system_params)}.csv"
         self.q_values = q_values  # Array of q-vectors magnitute to evaluate
-        self.L_Values = np.unique(particle_lengths)
+        self.particle_types = particle_types  # Per-particle type index
+        self.type_Ls = type_Ls  # Per-type length
+        self.type_Ds = type_Ds  # Per-type diameter
+        self.type_Vs = type_Vs  # Per-type volume
+
         self.Iq = []
-        self.alpha_values = np.linspace(0, np.pi, 1000)  # Angle between rod axis and q
-        print(f"q {len(self.q_values)}, alpha {len(self.alpha_values)}, L {len(self.L_Values)}; total grid point {len(self.alpha_values)* len(self.q_values)* len(self.L_Values)}")
+        self.alpha_values = np.linspace(0, np.pi, 100)  # Angle between rod axis and q
+        print(f"q {len(self.q_values)}, alpha {len(self.alpha_values)}; total grid point {len(self.alpha_values)* len(self.q_values)} * numer of interpolator {len(self.type_Ls)}")
         print("Building FQ interpolator")
-        Fq_interp, Fq_mesh = build_FQalpha_interpolator(self.q_values, self.alpha_values, self.L_Values)
+        # Fq_interp should be a list per type, and only interpolate on q and alpha
+        type_Fq_interps, type_Fq_meshs = build_FQalpha_interpolator(self.q_values, self.alpha_values, self.type_Ls, self.type_Ds)
+
         print("done building FQ interpolator")
-        self.Fq_interp = Fq_interp
-        self.particle_lengths = particle_lengths
+        self.type_Fq_interps = type_Fq_interps  # list of interpolators, one per type
 
         self._header_written = False
 
@@ -185,9 +195,8 @@ class MeasureScattering(hoomd.custom.Action):
         # Rod directors (body-frame axis along z)
         local_axis = np.array([0.0, 0.0, 1.0])
         directors = rowan.rotate(snap.particles.orientation, local_axis)
-        particle_lengths = self.particle_lengths
 
-        Iq = calculate_IQ(positions, directors, particle_lengths, self.q_values, self.Fq_interp)
+        Iq = calculate_IQ(positions, directors, self.particle_types, self.type_Vs, self.q_values, self.type_Fq_interps)
 
         self.Iq.append(Iq)
 
@@ -198,8 +207,9 @@ class MeasureScattering(hoomd.custom.Action):
                 f.write("pd_type," + f"{self.system_params['pd_type']}\n")
                 f.write("N," + f"{self.system_params['N']}\n")
                 f.write("phi," + f"{self.system_params['phi']}\n")
-                f.write("mean_ld," + f"{self.system_params['mean_ld']}\n")
-                f.write("sigma," + f"{self.system_params['sigma']}\n")
+                f.write("meanL," + f"{self.system_params['meanL']}\n")
+                f.write("sigmaL," + f"{self.system_params['sigmaL']}\n")
+                f.write("sigmaD," + f"{self.system_params['sigmaD']}\n")
                 header = "step,q," + ",".join([f"{self.q_values[i]}" for i in range(len(self.q_values))]) + "\n"
                 f.write(header)
                 self._header_written = True
@@ -219,8 +229,9 @@ class MeasureScattering(hoomd.custom.Action):
             f.write("pd_type," + f"{self.system_params['pd_type']}\n")
             f.write("N," + f"{self.system_params['N']}\n")
             f.write("phi," + f"{self.system_params['phi']}\n")
-            f.write("mean_ld," + f"{self.system_params['mean_ld']}\n")
-            f.write("sigma," + f"{self.system_params['sigma']}\n")
+            f.write("meanL," + f"{self.system_params['meanL']}\n")
+            f.write("sigmaL," + f"{self.system_params['sigmaL']}\n")
+            f.write("sigmaD," + f"{self.system_params['sigmaD']}\n")
             f.write("q,Iq,dIq\n")
             # write the current averaged Iq and its error (will be overwritten on subsequent calls)
             for i in range(len(self.q_values)):

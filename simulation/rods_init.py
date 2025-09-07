@@ -7,85 +7,134 @@ from rods_tool import *
 import os
 
 
-# Function to generate aspect ratios (L/d) based on polydispersity type
-def generate_aspect_ratios(N, mean_ld, sigma, pd_type="uniform"):
+# Function to generate lengths (L) and diameters (D) based on polydispersity type and parameters
+def generate_rods_dimensions(N, meanL, sigmaL, sigmaD, pd_type="uniform"):
     if pd_type == "uniform":
-        # Uniform: mean_ld * U(1-sigma, 1+sigma)
-        return mean_ld * np.random.uniform(1 - sigma, 1 + sigma, N)
+        # Uniform for L: meanL * U(1-sigmaL, 1+sigmaL)
+        Ls = meanL * np.random.uniform(1 - sigmaL, 1 + sigmaL, N)
+        # Uniform for D: meanD=1 * U(1-sigmaD, 1+sigmaD)
+        Ds = 1.0 * np.random.uniform(1 - sigmaD, 1 + sigmaD, N)
+
     elif pd_type == "normal":
-        # normal: mean_ld * Normal(1, sigma)
-        particle_lengths = mean_ld * np.random.normal(1, sigma, N)
-        particle_lengths = np.clip(particle_lengths, 0, None)  # Ensure no negative lengths
-        return particle_lengths
+        # Normal for L: meanL * Normal(1, sigmaL)
+        Ls = meanL * np.random.normal(1, sigmaL, N)
+        Ls = np.clip(Ls, 0, None)  # Ensure no negative lengths
+        # Normal for D: meanD=1 * Normal(1, sigmaD)
+        Ds = 1.0 * np.random.normal(1, sigmaD, N)
+        Ds = np.clip(Ds, 0.1, None)  # Ensure no negative diameters
     elif pd_type == "lognormal":
-        # lognormal:  * LogNormal(log(mean_ld), s) where mu and s derived from mean and sigma
-        return np.random.lognormal(mean=np.log(mean_ld), sigma=sigma, size=N)
+        # Lognormal for L: LogNormal(log(meanL), sigmaL)
+        Ls = np.random.lognormal(mean=np.log(meanL), sigma=sigmaL, size=N)
+        # Lognormal for D: LogNormal(log(1), sigmaD)
+        Ds = np.random.lognormal(mean=np.log(1.0), sigma=sigmaD, size=N)
     else:
-        raise ValueError("Unsupported pd_type. Use 'uniform' or 'normal'.")
+        raise ValueError("Unsupported pd_type. Use 'uniform', 'normal', or 'lognormal'.")
+
+    return Ls, Ds
 
 
-# Function to discretize aspects into bins (for types)
-def discretize_aspects(aspects, num_types):
-    # Sort and bin into num_types
-    sorted_aspects = np.sort(aspects)
-    type_ids = np.floor(np.linspace(0, num_types - 1, len(aspects))).astype(int)
-    # Average aspect per bin
-    type_aspects = np.array([np.mean(sorted_aspects[type_ids == t]) for t in range(num_types)])
-    # Assign type to each particle
-    particle_types = type_ids
-    return particle_types, type_aspects
+# Function to discretize lengths (Ls) and diameters (Ds) into bins for types
+def discretize_aspects(Ls, Ds, ntype):
+    # in the (L,D) plane, uniformly find ntype points, assign each (L_i,D_i) to the nearest point, so we will have total ntype combination of (L,D)
+
+    min_L = np.min(Ls)
+    max_L = np.max(Ls)
+    min_D = np.min(Ds)
+    max_D = np.max(Ds)
+
+    # Determine grid size for approximately ntype points
+    ntypeL = int(np.ceil(np.sqrt(ntype)))
+    ntypeD = int(np.ceil(ntype / ntypeL))
+    num_types = ntypeL * ntypeD
+
+    # Handle edge cases
+    if ntype <= 0:
+        raise ValueError("ntype must be positive")
+    if len(Ls) == 0 or len(Ds) == 0:
+        raise ValueError("Ls and Ds must not be empty")
+
+    # If all Ls are the same, set centroids_L to that value
+    if min_L == max_L:
+        centroids_L = np.full(ntypeL, min_L)
+    else:
+        centroids_L = np.linspace(min_L, max_L, ntypeL)
+
+    # If all Ds are the same, set centroids_D to that value
+    if min_D == max_D:
+        centroids_D = np.full(ntypeD, min_D)
+    else:
+        centroids_D = np.linspace(min_D, max_D, ntypeD)
+
+    centroids = np.array([[cl, cd] for cl in centroids_L for cd in centroids_D])
+    X = np.column_stack((Ls, Ds))
+    distances = np.linalg.norm(X[:, np.newaxis] - centroids, axis=2)
+    particle_types = np.argmin(distances, axis=1)
+
+    type_Ls = centroids[:, 0]
+    type_Ds = centroids[:, 1]
+
+    print("num_types", num_types)
+    print("particle_types", particle_types)
+    print("type_Ls", type_Ls)
+    print("type_Ds", type_Ds)
+
+    return num_types, particle_types, type_Ls, type_Ds
 
 
-def generate_and_save_shape_info(subfolder, pd_type, N, mean_ld, sigma):
-    D = 1.0
-    r = D / 2.0  # Radius for sweep
-    aspects = generate_aspect_ratios(N, mean_ld, sigma, pd_type)
-    lengths = aspects * D  # Cylinder lengths (excluding caps)
+def generate_and_save_shape_info(subfolder, pd_type, N, meanL, sigmaL, sigmaD):
+    Ls, Ds = generate_rods_dimensions(N, meanL, sigmaL, sigmaD, pd_type)
     # Discretize into types
-    if sigma == 0:
-        num_types = 1
-    else:
-        num_types = min(100, N)  # Reduced to 100 for better performance
-    particle_types, type_lengths = discretize_aspects(lengths, num_types)
 
-    # Compute volumes per type: π r² L + (4/3) π r³ = (π/4) L + (π/6) with d=1
-    type_volumes = (math.pi / 4) * type_lengths + (math.pi / 6)
-    total_volume = sum(type_volumes[particle_types[i]] for i in range(N))
+    ntype_approx = min(80, N)
+
+    num_types, particle_types, type_Ls, type_Ds = discretize_aspects(Ls, Ds, ntype_approx)
+
+    # Compute volumes per type: π r² L + (4/3) π r³ = (π/4) D² L + (π/6) D³ with r = D/2
+    type_Vs = (math.pi / 4) * type_Ds**2 * type_Ls + (math.pi / 6) * type_Ds**3
+    total_V = sum(type_Vs[particle_types[i]] for i in range(N))
+    total_V2 = sum(type_Vs[particle_types[i]] ** 2 for i in range(N))
 
     # Save particle_types, type_lengths, and total_vol to an npz file
-    np.savez(f"{subfolder}/particle_data.npz", num_types=num_types, particle_types=particle_types, type_lengths=type_lengths, total_volume=total_volume)
+    np.savez(f"{subfolder}/particle_data.npz", num_types=num_types, particle_types=particle_types, type_Ls=type_Ls, type_Ds=type_Ds, type_Vs=type_Vs, total_V=total_V, total_V2=total_V2)
 
-    return num_types, particle_types, type_lengths, total_volume
+    return num_types, particle_types, type_Ls, type_Ds, type_Vs, total_V, total_V2
 
 
 def read_shape_info(subfolder):
     data = np.load(f"{subfolder}/particle_data.npz")
     num_types = data["num_types"]
     particle_types = data["particle_types"]
-    type_lengths = data["type_lengths"]
-    total_volume = data["total_volume"]
-    return num_types, particle_types, type_lengths, total_volume
+    type_Ls = data["type_Ls"]
+    type_Ds = data["type_Ds"]
+    type_Vs = data["type_Vs"]
+    total_V = data["total_V"]
+    total_V2 = data["total_V2"]
+    return num_types, particle_types, type_Ls, type_Ds, type_Vs, total_V, total_V2
 
 
 def run_initialization(save_dump_detail, system_params, randomization_steps=5000, max_compression_steps=50000, num_compression_stage=10):
     folder = system_params["folder"]
     subfolder = f"{folder}/{create_file_label(system_params)}"
-    pd_type, N, phi, mean_ld, sigma = system_params["pd_type"], system_params["N"], system_params["phi"], system_params["mean_ld"], system_params["sigma"]
+    pd_type, N, phi, meanL, sigmaL, sigmaD = system_params["pd_type"], system_params["N"], system_params["phi"], system_params["meanL"], system_params["sigmaL"], system_params["sigmaD"]
 
-    # Diameter (fixed)
-    D = 1.0
-    r = D / 2.0  # Radius for sweep
-
-    num_types, particle_types, type_lengths, total_volume = generate_and_save_shape_info(subfolder, pd_type, N, mean_ld, sigma)
-    particle_lengths = type_lengths[particle_types]  # Get lengths based on types
-    print("type_lengths", type_lengths)
-    print("particle_lengths", particle_lengths)
+    num_types, particle_types, type_Ls, type_Ds, type_Vs, total_V, total_V2 = generate_and_save_shape_info(subfolder, pd_type, N, meanL, sigmaL, sigmaD)
+    particle_Ls = type_Ls[particle_types]
+    particle_Ds = type_Ds[particle_types]
+    print("particle_types", particle_types)
+    print("type_Ls", type_Ls)
+    print("type_Ds", type_Ds)
+    print("unique Type_Ls", np.unique(type_Ls))
+    print("unique Type_Ds", np.unique(type_Ds))
+    print("len(type_Ls)", len(type_Ls))
+    print("len(type_Ds)", len(type_Ds))
+    print("particle_Ls", particle_Ls)
+    print("particle_Ds", particle_Ds)
 
     # Initial and target box
     initial_phi = 0.01
-    initial_box_vol = total_volume / initial_phi
+    initial_box_vol = total_V / initial_phi
     initial_box_L = initial_box_vol ** (1 / 3)
-    target_box_vol = total_volume / phi
+    target_box_vol = total_V / phi
 
     # Initialize HOOMD
     device = hoomd.device.CPU()  # Or hoomd.device.GPU() if available
@@ -129,10 +178,11 @@ def run_initialization(save_dump_detail, system_params, randomization_steps=5000
 
     for i in range(num_types):
         type_name = f"type_{i}"
-        L = type_lengths[i]
+        L = type_Ls[i]
+        D = type_Ds[i]
         # Vertices for spherocylinder: two points separated by L along z-axis, to be consistent with ovito
         vertices = [[0, 0, -L / 2], [0, 0, L / 2]]
-        mc.shape[type_name] = dict(vertices=vertices, sweep_radius=r, ignore_statistics=False)
+        mc.shape[type_name] = dict(vertices=vertices, sweep_radius=0.5 * D, ignore_statistics=False)
 
     sim.operations.integrator = mc
 
@@ -140,7 +190,7 @@ def run_initialization(save_dump_detail, system_params, randomization_steps=5000
     sim.run(0)
     print(f"Initial overlaps: {mc.overlaps}")
 
-    dumper = DumpTXT(subfolder, type_lengths, "compress")  # Use aspects for L/D
+    dumper = DumpTXT(subfolder, type_Ls, type_Ds, type_Vs, "compress")
     if save_dump_detail:
         print("Saving detailed dumps...")
         custom_writer = hoomd.write.CustomWriter(action=dumper, trigger=hoomd.trigger.Periodic(5000))
@@ -201,7 +251,7 @@ def run_initialization(save_dump_detail, system_params, randomization_steps=5000
     phi_steps[-1] = phi  # Ensure exact final target
     for i, target_phi in enumerate(phi_steps[1:]):
         print(f"state {i}/{num_compression_stage} Compressing to phi={target_phi} ... final target {phi}")
-        target_box_vol = total_volume / target_phi
+        target_box_vol = total_V / target_phi
         final_box = hoomd.Box.from_box(sim.state.box)
         final_box.volume = target_box_vol
         compresser = hoomd.hpmc.update.QuickCompress(

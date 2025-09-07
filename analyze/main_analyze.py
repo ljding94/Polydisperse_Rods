@@ -24,8 +24,8 @@ def main():
     if 1:
         #folder = "../data/20250731"
         folder = "../data/20250821"
-        phis = np.arange(0.03, 0.31, 0.03)
-        #phis = [0.27]
+        #phis = np.arange(0.03, 0.31, 0.03)
+        phis = [0.27]
         mean_lds = np.arange(0.00, 6.10, 0.50)
         #mean_lds = [5.0]
         sigmas = [0.00, 0.05, 0.10, 0.15, 0.20]
