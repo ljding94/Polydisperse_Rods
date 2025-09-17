@@ -339,25 +339,42 @@ def plot_Fq_interpolate():
     plt.show()
 
 
-def calc_PQ(q_values, pd_type, mean_ld, sigma):
+def calc_PQ(q_values, pd_type, meanL, sigmaL, sigmaD):
     sum_PQ_V2 = np.zeros(len(q_values), dtype=np.float64)
     sum_V2 = 0
-    n_particles = 20 if sigma !=0 else 1
+    n_particles = max(20 if sigmaL != 0 or sigmaD != 0 else 1, 20 if sigmaD != 0 else 1)
     particle_lengths = np.zeros(n_particles, dtype=np.float64)
+    particle_diameters = np.ones(n_particles, dtype=np.float64)  # meanD = 1.0
     # 1. sample particle lengths
     if pd_type == "uniform":
-        particle_lengths = mean_ld * np.random.uniform(1 - sigma, 1 + sigma, n_particles)
+        if sigmaL > 0:
+            particle_lengths = meanL * np.random.uniform(1 - sigmaL, 1 + sigmaL, n_particles)
+        else:
+            particle_lengths = np.full(n_particles, meanL)
+        if sigmaD > 0:
+            particle_diameters = 1.0 * np.random.uniform(1 - sigmaD, 1 + sigmaD, n_particles)
+        else:
+            particle_diameters = np.ones(n_particles)
     elif pd_type == "normal":
-        particle_lengths = mean_ld * np.random.normal(1, sigma, n_particles)
-        particle_lengths = np.clip(particle_lengths, 0, None)
+        if sigmaL > 0:
+            particle_lengths = meanL * np.random.normal(1, sigmaL, n_particles)
+            particle_lengths = np.clip(particle_lengths, 0, None)
+        else:
+            particle_lengths = np.full(n_particles, meanL)
+        if sigmaD > 0:
+            particle_diameters = 1.0 * np.random.normal(1, sigmaD, n_particles)
+            particle_diameters = np.clip(particle_diameters, 0, None)
+        else:
+            particle_diameters = np.ones(n_particles)
     else:
         raise ValueError(f"Unknown pd_type: {pd_type}")
 
     for n in range(n_particles):
-        print(f"Calculating PQ for particle {n+1}/{n_particles} with length {particle_lengths[n]:.2f}")
+        print(f"Calculating PQ for particle {n+1}/{n_particles} with length {particle_lengths[n]:.2f}, diameter {particle_diameters[n]:.2f}")
         L = particle_lengths[n]
-        # 2. calculate PQ for each particle length
-        PQ_V2, volume = PQ_single_rod_V2(q_values, L)
+        D = particle_diameters[n]
+        # 2. calculate PQ for each particle length and diameter
+        PQ_V2, volume = PQ_single_rod_V2(q_values, L, D)
         sum_PQ_V2 += PQ_V2
         sum_V2 += volume**2
 
@@ -369,32 +386,33 @@ def plot_PQ_demo():
     #q_values = np.logspace(np.log10(0.02), np.log10(20), 200)
     q_values = np.linspace(0.1, 12.5, 80)
     pd_type = "uniform"
-    mean_ld = 4.0
-    sigma = 0.0
+    meanL = 4.0
+    sigmaL = 0.0
+    sigmaD = 0.0
 
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
 
-    # First subplot: varying mean_ld
-    for mean_ld in [0.0, 2.0, 4.0, 8.0, 16.0]:
-        PQ = calc_PQ(q_values, pd_type, mean_ld, sigma)
-        ax1.plot(q_values, PQ, label=f"mean_ld={mean_ld}")
+    # First subplot: varying meanL
+    for meanL in [0.0, 2.0, 4.0, 8.0, 16.0]:
+        PQ = calc_PQ(q_values, pd_type, meanL, sigmaL, sigmaD)
+        ax1.plot(q_values, PQ, label=f"meanL={meanL}")
 
     ax1.set_xlabel("q")
     ax1.set_ylabel("P(q)")
-    ax1.set_title(f"Varying mean L/D (σ={sigma})")
+    ax1.set_title(f"Varying mean L/D (σL={sigmaL}, σD={sigmaD})")
     ax1.set_yscale("log")
     #ax1.set_xscale("log")
     ax1.legend()
     ax1.grid(True, alpha=0.3)
 
-    # Second subplot: varying sigma
-    for sigma_val in [0.0, 0.2, 0.5, 0.8]:
-        PQ = calc_PQ(q_values, pd_type, mean_ld, sigma_val)
-        ax2.plot(q_values, PQ, label=f"σ={sigma_val}")
+    # Second subplot: varying sigmaL
+    for sigmaL_val in [0.0, 0.2, 0.5, 0.8]:
+        PQ = calc_PQ(q_values, pd_type, meanL, sigmaL_val, sigmaD)
+        ax2.plot(q_values, PQ, label=f"σL={sigmaL_val}")
 
     ax2.set_xlabel("q")
     ax2.set_ylabel("P(q)")
-    ax2.set_title(f"Varying σ (mean L/D={mean_ld})")
+    ax2.set_title(f"Varying σL (mean L/D={meanL}, σD={sigmaD})")
     ax2.set_yscale("log")
     ax2.set_xscale("log")
     ax2.legend()
@@ -406,7 +424,7 @@ def plot_PQ_demo():
 
 
 def get_Iq_from_file(filename):
-    # Read the header (first 5 lines)
+    # Read the header (first 6 lines)
     with open(filename, "r") as f:
         lines = f.readlines()
 
@@ -414,28 +432,29 @@ def get_Iq_from_file(filename):
     pd_type = lines[0].split(",")[1].strip()
 
     # Parse remaining numerical values
-    header_data = np.genfromtxt(filename, delimiter=",", max_rows=4, skip_header=1)
+    header_data = np.genfromtxt(filename, delimiter=",", max_rows=5, skip_header=1)
     N = header_data[0, 1]
     phi = header_data[1, 1]
-    mean_ld = header_data[2, 1]
-    sigma = header_data[3, 1]
+    meanL = header_data[2, 1]
+    sigmaL = header_data[3, 1]
+    sigmaD = header_data[4, 1]
 
-    # Read the data section (starting from row 6 with 3 columns)
-    data_section = np.genfromtxt(filename, delimiter=",", skip_header=6)
+    # Read the data section (starting from row 7 with 3 columns)
+    data_section = np.genfromtxt(filename, delimiter=",", skip_header=7)
     q, Iq, dIq = data_section[:, 0], data_section[:, 1], data_section[:, 2]
-    return q, Iq, dIq, pd_type, N, phi, mean_ld, sigma
+    return q, Iq, dIq, pd_type, N, phi, meanL, sigmaL, sigmaD
 
 
 def plot_sample_Iq(filename):
     # Read the file
-    q, Iq, dIq, pd_type, N, phi, mean_ld, sigma = get_Iq_from_file(filename)
+    q, Iq, dIq, pd_type, N, phi, meanL, sigmaL, sigmaD = get_Iq_from_file(filename)
     print("q", q)
     print("Iq", Iq)
-    print("pd_type, N, phi, mean_ld, sigma", pd_type, N, phi, mean_ld, sigma)
+    print("pd_type, N, phi, meanL, sigmaL, sigmaD", pd_type, N, phi, meanL, sigmaL, sigmaD)
 
     plt.figure(figsize=(5, 5))
-    plt.plot(q, Iq, "o", mfc="none", label=f"N={N}, phi={phi}, mean_ld={mean_ld}, sigma={sigma}", color="blue")
-    Pq = calc_PQ(q, pd_type, mean_ld, sigma)
+    plt.plot(q, Iq, "o", mfc="none", label=f"N={N}, phi={phi}, meanL={meanL}, sigmaL={sigmaL}, sigmaD={sigmaD}", color="blue")
+    Pq = calc_PQ(q, pd_type, meanL, sigmaL, sigmaD)
     plt.plot(q, Pq, label="calculated PQ", color="red", linestyle="--")
     plt.yscale("log")
     plt.xscale("log")
@@ -452,7 +471,7 @@ def plot_sample_Iq(filename):
 
 def read_Iq_from_folder(folder, all_system_params):
     all_params = []
-    param_names = ["phi", "mean_ld", "sigma"]
+    param_names = ["phi", "meanL", "sigmaL", "sigmaD"]
     all_Iq = []
     for system_params in all_system_params:
         label = create_file_label(system_params)
@@ -460,9 +479,9 @@ def read_Iq_from_folder(folder, all_system_params):
         if not os.path.exists(filename):
             print(f"File not found: {filename}")
             continue
-        q, Iq, dIq, pd_type, N, phi, mean_ld, sigma = get_Iq_from_file(filename)
+        q, Iq, dIq, pd_type, N, phi, meanL, sigmaL, sigmaD = get_Iq_from_file(filename)
         all_Iq.append(Iq)
-        all_params.append((phi, mean_ld, sigma))
+        all_params.append((phi, meanL, sigmaL, sigmaD))
 
     all_Iq = np.array(all_Iq)
     all_params = np.array(all_params)
@@ -474,14 +493,15 @@ def calc_Pq_for_params(q, all_system_params):
     cache = {}
     for system_params in all_system_params:
         pd_type = system_params["pd_type"]
-        mean_ld = system_params["mean_ld"]
-        sigma = system_params["sigma"]
-        key = (pd_type, float(mean_ld), float(sigma))
+        meanL = system_params["meanL"]
+        sigmaL = system_params["sigmaL"]
+        sigmaD = system_params["sigmaD"]
+        key = (pd_type, float(meanL), float(sigmaL), float(sigmaD))
         if key in cache:
             Pq = cache[key]
         else:
             print(f"Calculating P(q) for {key}")
-            Pq = calc_PQ(q, pd_type, mean_ld, sigma)
+            Pq = calc_PQ(q, pd_type, meanL, sigmaL, sigmaD)
             cache[key] = Pq
         all_Pq.append(Pq)
     return np.array(all_Pq)
@@ -489,21 +509,17 @@ def calc_Pq_for_params(q, all_system_params):
 
 def plot_Iq_versus_params(folder, all_system_params):
     q, all_Iq, all_params = read_Iq_from_folder(folder, all_system_params)
-    # plot 3 axs, each with all Iq versus q curves, but coloerd by different parameters
-    #all_Pq = calc_Pq_for_params(q, all_system_params)
+    # plot I(q) versus q curves, colored by different parameters
 
-    # Create figure with 2 rows x 3 columns (top row: I(q), bottom row: I(q)/P(q))
-    fig, axes = plt.subplots(2, 3, figsize=(18, 12))
-    top_axes = axes[0, :]
-    bot_axes = axes[1, :]
+    # Create figure with 2 rows x 2 columns for I(q) plots
+    fig, axes = plt.subplots(2, 2, figsize=(12, 10))
 
     # Parameter names and indices
-    param_names = ["φ (packing fraction)", "mean L/D", "σ (polydispersity)"]
-    param_indices = [0, 1, 2]  # phi, mean_ld, sigma
+    param_names = ["φ (packing fraction)", "mean L/D", "σL (length polydispersity)", "σD (diameter polydispersity)"]
+    param_indices = [0, 1, 2, 3]  # phi, meanL, sigmaL, sigmaD
 
     for ax_idx, (param_name, param_idx) in enumerate(zip(param_names, param_indices)):
-        ax_top = top_axes[ax_idx]
-        ax_bot = bot_axes[ax_idx]
+        ax = axes.flat[ax_idx]
 
         # Get unique values and sort them for consistent coloring
         param_values = all_params[:, param_idx]
@@ -523,41 +539,23 @@ def plot_Iq_versus_params(folder, all_system_params):
             color = colormap(norm(param_vals[param_idx]))
 
             # Create label with all parameter values
-            label = f"φ={param_vals[0]:.2f}, L/D={param_vals[1]:.1f}, σ={param_vals[2]:.2f}"
+            label = f"φ={param_vals[0]:.2f}, L/D={param_vals[1]:.1f}, σL={param_vals[2]:.2f}, σD={param_vals[3]:.2f}"
 
-            # Top: I(q)
-            ax_top.plot(q, Iq, "-", color=color, alpha=0.7, markersize=4, linewidth=1.5,
-                        label=label if (ax_idx == 0 and i == 0) else "")  # only show one legend entry to avoid clutter
+            # Plot I(q)
+            ax.plot(q, Iq, "-", color=color, alpha=0.7, markersize=4, linewidth=1.5,
+                    label=label if (ax_idx == 0 and i == 0) else "")  # only show one legend entry to avoid clutter
 
-            # Bottom: I(q)/P(q)
-            try:
-                Pq = all_Pq[i]
-            except Exception:
-                # Fallback: avoid crash if indexing mismatches
-                Pq = np.ones_like(q)
+        # Subplot formatting
+        ax.set_xlabel("q", fontsize=12)
+        ax.set_ylabel(r"$I(q)$", fontsize=12)
+        ax.set_title(f"I(q) colored by {param_name}", fontsize=14, fontweight="bold")
+        ax.set_yscale("log")
+        ax.grid(True, which="both", linestyle="--", linewidth=0.5, alpha=0.7)
 
-            # avoid division by zero or tiny Pq
-            #safe_Pq = np.maximum(Pq, 1e-12)
-            #I_over_P = Iq / safe_Pq
-            #ax_bot.plot(q, I_over_P, "-", color=color, alpha=0.7, markersize=4, linewidth=1.5,label=label if (ax_idx == 0 and i == 0) else "")
-
-        # Top subplot formatting
-        ax_top.set_xlabel("q", fontsize=12)
-        ax_top.set_ylabel(r"$I(q)$", fontsize=12)
-        ax_top.set_title(f"I(q) colored by {param_name}", fontsize=14, fontweight="bold")
-        ax_top.set_yscale("log")
-        ax_top.grid(True, which="both", linestyle="--", linewidth=0.5, alpha=0.7)
-
-        # Bottom subplot formatting
-        ax_bot.set_xlabel("q", fontsize=12)
-        ax_bot.set_ylabel(r"$I(q)/P(q)$", fontsize=12)
-        ax_bot.set_title(f"I(q) / P(q) colored by {param_name}", fontsize=14, fontweight="bold")
-        ax_bot.grid(True, which="both", linestyle="--", linewidth=0.5, alpha=0.7)
-
-        # Add colorbar for each column (use same norm and colormap for top & bottom)
+        # Add colorbar for each subplot
         sm = plt.cm.ScalarMappable(cmap=colormap, norm=norm)
         sm.set_array([])
-        cbar = plt.colorbar(sm, ax=[ax_top])
+        cbar = plt.colorbar(sm, ax=ax)
         cbar.set_label(param_name, fontsize=11)
 
     plt.tight_layout()

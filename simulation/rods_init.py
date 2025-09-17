@@ -85,7 +85,7 @@ def generate_and_save_shape_info(subfolder, pd_type, N, meanL, sigmaL, sigmaD):
     Ls, Ds = generate_rods_dimensions(N, meanL, sigmaL, sigmaD, pd_type)
     # Discretize into types
 
-    ntype_approx = min(80, N)
+    ntype_approx = min(100, N)
 
     num_types, particle_types, type_Ls, type_Ds = discretize_aspects(Ls, Ds, ntype_approx)
 

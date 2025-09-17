@@ -22,31 +22,47 @@ def main():
     if 0:
         plot_PQ_demo()
     if 1:
-        #folder = "../data/20250731"
-        folder = "../data/20250821"
-        #phis = np.arange(0.03, 0.31, 0.03)
-        phis = [0.27]
-        mean_lds = np.arange(0.00, 6.10, 0.50)
-        #mean_lds = [5.0]
-        sigmas = [0.00, 0.05, 0.10, 0.15, 0.20]
+        # folder = "../data/20250731"
+        folder = "../data/20250915"
+        run_type = "prec"
+        run_num = 0
+        pd_type = "uniform"
+        N = 10000
         all_system_params = []
-        for phi in phis:
-            for mean_ld in mean_lds:
-                for sigma in sigmas:
+        for phi in np.arange(0.03, 0.31, 0.03):
+        #for phi in [0.12]:
+            #for meanL in np.arange(0.00, 6.10, 1.00):
+            for meanL in [4.0]:
+                sigmaD = 0.00
+                '''
+                for sigmaL in np.arange(0.00, 0.201, 0.05):
                     system_params = {
-                        "run_type": "prec",
-                        "run_num": 0,
-                        "pd_type": "uniform",
-                        #"pd_type": "normal",
-                        "N": 10000,
+                        "run_type": run_type,
+                        "run_num": run_num,
+                        "pd_type": pd_type,
+                        "N": N,
                         "phi": phi,
-                        "mean_ld": mean_ld,
-                        "sigma": sigma,
+                        "meanL": meanL,
+                        "sigmaL": sigmaL,
+                        "sigmaD": sigmaD,
+                    }
+                    all_system_params.append(system_params)
+                '''
+                sigmaL = 0.00
+                for sigmaD in np.arange(0.00, 0.201, 0.05):
+                    system_params = {
+                        "run_type": run_type,
+                        "run_num": run_num,
+                        "pd_type": pd_type,
+                        "N": N,
+                        "phi": phi,
+                        "meanL": meanL,
+                        "sigmaL": sigmaL,
+                        "sigmaD": sigmaD,
                     }
                     all_system_params.append(system_params)
 
         plot_Iq_versus_params(folder, all_system_params)
-
 
 
 if __name__ == "__main__":

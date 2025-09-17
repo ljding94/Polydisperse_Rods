@@ -26,8 +26,14 @@ def main(args):
     elif args.run_type == "rand":
         system_params["phi"] = np.random.uniform(0.01, 0.3)
         system_params["meanL"] = np.random.uniform(0.0, 6.0)
-        system_params["sigmaL"] = np.random.uniform(0.00, 0.50)
-        system_params["sigmaD"] = np.random.uniform(0.00, 0.20)
+        # system_params["sigmaL"] = np.random.uniform(0.00, 0.50)
+        system_params["sigmaL"] = 0.0  # sigmaL is minor effect
+        if args.pd_type == "uniform":
+            system_params["sigmaD"] = np.random.uniform(0.00, 0.30)
+        elif args.pd_type == "normal":
+            system_params["sigmaD"] = np.random.uniform(0.00, 0.15)
+        elif args.pd_type == "lognormal":
+            system_params["sigmaD"] = np.random.uniform(0.00, 0.15)
 
     label = create_file_label(system_params)
     folder = f"{args.folder}/{label}"
@@ -43,8 +49,8 @@ def main(args):
     )
 
     # render(folder, "compressed.gsd", frame=-1) # no need, confirm OVITO works
-    q_values = np.linspace(0.5, 12.5, 80)
-    #q_values = np.logspace(np.log10(0.1), np.log10(20), 200)
+    q_values = np.linspace(1.0, 13, 80)
+    # q_values = np.logspace(np.log10(0.1), np.log10(20), 200)
     run_sampling(
         save_dump_detail=args.save_dump_detail,
         system_params=system_params,
@@ -91,3 +97,6 @@ if __name__ == "__main__":
 # sample usage:
 # conda activate hoomd-env
 # python3 main_simulation.py --run_type prec --run_num 0 --pd_type uniform --N 100 --phi 0.10 --meanL 4.00 --sigmaL 0.10 --sigmaD 0.10 --folder /Users/ldq/Work/Polydisperse_Rods/data_local/data_pool --save_dump_detail 1
+
+
+# python3 main_simulation.py --run_type rand --run_num 0 --pd_type uniform --N 100 --folder /Users/ldq/Work/Polydisperse_Rods/data_local/data_pool --save_dump_detail 1
