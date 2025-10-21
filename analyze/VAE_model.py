@@ -11,12 +11,18 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 
 
 def denormalize_generated_Iq(folder, label, log10Iq_norm, params_norm):
-    log10Iq_stats = np.load(f"{folder}/{label}_log10Iq_dataset_train_stats.npz")
-    log10Iq_mean = log10Iq_stats["mean"]
-    log10Iq_std = log10Iq_stats["std"]
-    params_mean = log10Iq_stats["params_mean"]
-    params_std = log10Iq_stats["params_std"]
+    data_stats = np.load(f"{folder}/{label}_log10Iq_dataset_train_stats.npz")
+    log10Iq_mean = data_stats["mean_log10Iq"]
+    log10Iq_std = data_stats["std_log10Iq"]
+    params_name = data_stats["params_name"]
+    params_mean = data_stats["mean_params"]
+    params_std = data_stats["std_params"]
     log10Iq = log10Iq_norm * log10Iq_std + log10Iq_mean  # denormalize)
+
+    if "sigmaL" in params_name:
+        sigmaL_index = list(params_name).index("sigmaL")
+        params_mean = np.delete(params_mean, sigmaL_index, axis=1)
+        params_name = np.delete(params_name, sigmaL_index)
     params = params_norm * params_std + params_mean  # denormalize parameters
     return log10Iq, params
 
@@ -25,9 +31,15 @@ def normalize_Iq(folder, label, log10Iq, params):
     data_stats = np.load(f"{folder}/{label}_log10Iq_dataset_train_stats.npz")
     log10Iq_mean = data_stats["mean_log10Iq"]
     log10Iq_std = data_stats["std_log10Iq"]
+    params_name = data_stats["params_name"]
     params_mean = data_stats["mean_params"]
     params_std = data_stats["std_params"]
     log10Iq_norm = (log10Iq - log10Iq_mean) / log10Iq_std  # normalize to mean=0, std=1 for each q point
+    # we need to remove sigmaL since it's always 0
+    if "sigmaL" in params_name:
+        sigmaL_index = list(params_name).index("sigmaL")
+        params_mean = np.delete(params_mean, sigmaL_index, axis=1)
+        params_name = np.delete(params_name, sigmaL_index)
     params_norm = (params - params_mean) / params_std  # normalize parameters
     return log10Iq_norm, params_norm
 
@@ -48,8 +60,16 @@ class logIqDataset(Dataset):
         print(data_stats.keys())
         self.log10Iq_mean = data_stats["mean_log10Iq"]
         self.log10Iq_std = data_stats["std_log10Iq"]
+        params_name = data_stats
         self.params_mean = data_stats["mean_params"]
         self.params_std = data_stats["std_params"]
+
+        # we need to remove sigmaL since it's always 0
+        if "sigmaL" in params_name:
+            sigmaL_index = list(self.params_name).index("sigmaL")
+            self.params = np.delete(self.params, sigmaL_index, axis=1)
+            self.params_name = np.delete(self.params_name, sigmaL_index)
+            print("Removed sigmaL from params")
 
         self.q = Iq_data["q"]
         self.log10Iq = (Iq_data["all_log10Iq"] - self.log10Iq_mean) / self.log10Iq_std  # normalize to mean=0, std=1 for each q point
@@ -58,11 +78,7 @@ class logIqDataset(Dataset):
         self.params = Iq_params
         self.params_name = Iq_data["params_name"]
 
-        # we need to remove sigmaL since it's always 0
-        if "sigmaL" in self.params_name:
-            sigmaL_index = list(self.params_name).index("sigmaL")
-            self.params = np.delete(self.params, sigmaL_index, axis=1)
-            self.params_name = np.delete(self.params_name, sigmaL_index)
+
 
         print("Dataset initialized:")
         print("self.params_name", self.params_name)
@@ -165,7 +181,7 @@ class VAE(nn.Module):
 
     def forward(self, x, u=None, *, deterministic=False):
         mu, logvar = self.encoder(x)
-        epsilons = torch.randn(100, *mu.shape, device=mu.device)
+        epsilons = torch.randn(10, *mu.shape, device=mu.device)
         z_samples = mu.unsqueeze(0) + epsilons * (0.5 * logvar).exp().unsqueeze(0)
         recons = self.decoder(z_samples)
         recon_avg = recons.mean(dim=0)
@@ -339,7 +355,7 @@ def train_and_save_generator(
     folder: str,
     label: str,
     vae_path: str,
-    input_dim: int = 2,
+    input_dim: int = 3,
     latent_dim: int = 3,
     batch_size: int = 32,
     num_epochs: int = 100,

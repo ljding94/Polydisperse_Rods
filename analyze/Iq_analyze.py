@@ -614,7 +614,7 @@ def build_Iq_dataset(folder, label, all_system_params):
 
     # Compute stats for train dataset
     mean_log10Iq_train = np.mean(all_log10Iq[train_idx], axis=0)
-    std_log10Iq_train = np.std(all_Iq[train_idx], axis=0)
+    std_log10Iq_train = np.std(all_log10Iq[train_idx], axis=0)
     mean_params_train = np.mean(all_params[train_idx], axis=0)
     std_params_train = np.std(all_params[train_idx], axis=0)
 
