@@ -2,6 +2,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import sys
 import os
+from scipy.interpolate import make_smoothing_spline
+from scipy.spatial import cKDTree
 
 # Add parent directory to path so we can import from there
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "simulation"))
@@ -383,7 +385,7 @@ def calc_PQ(q_values, pd_type, meanL, sigmaL, sigmaD):
 
 
 def plot_PQ_demo():
-    #q_values = np.logspace(np.log10(0.02), np.log10(20), 200)
+    # q_values = np.logspace(np.log10(0.02), np.log10(20), 200)
     q_values = np.linspace(0.1, 12.5, 80)
     pd_type = "uniform"
     meanL = 4.0
@@ -401,7 +403,7 @@ def plot_PQ_demo():
     ax1.set_ylabel("P(q)")
     ax1.set_title(f"Varying mean L/D (σL={sigmaL}, σD={sigmaD})")
     ax1.set_yscale("log")
-    #ax1.set_xscale("log")
+    # ax1.set_xscale("log")
     ax1.legend()
     ax1.grid(True, alpha=0.3)
 
@@ -469,24 +471,48 @@ def plot_sample_Iq(filename):
     plt.close()
 
 
+def smooth_Iq(q, Iq, phi):
+    log_Iq = np.log10(Iq)
+    log_Iq_smooth = log_Iq.copy()
+    q_smooth1 = 3.1 + 7.5 * phi  # empirical smoothing threshold
+    #q_smooth1 = 5.5  # empirical smoothing threshold
+    nsmooth1 = np.argmin(np.abs(q - q_smooth1))
+    if nsmooth1 > 5:
+        spl = make_smoothing_spline(q[:nsmooth1], log_Iq[:nsmooth1])  # cubic spline
+        q_smooth = np.linspace(q[0], q[nsmooth1 - 1], nsmooth1)
+        log_Iq_smooth[:nsmooth1] = spl(q_smooth)
+    Iq_smooth = 10**log_Iq_smooth
+    return Iq_smooth
+
+
 def read_Iq_from_folder(folder, all_system_params):
     all_params = []
-    param_names = ["phi", "meanL", "sigmaL", "sigmaD"]
     all_Iq = []
     for system_params in all_system_params:
         label = create_file_label(system_params)
         filename = f"{folder}/stats_sample_Iq_{label}.csv"
+        # print(f"Reading I(q) from {filename}...")
         if not os.path.exists(filename):
             print(f"File not found: {filename}")
             continue
         q, Iq, dIq, pd_type, N, phi, meanL, sigmaL, sigmaD = get_Iq_from_file(filename)
-        all_Iq.append(Iq)
+        Iq_smooth = smooth_Iq(q, Iq, phi)
+
+        # we should shift each I(q) to a given q point, so we don't need to worry about normalizing Iq data when using experimental data
+        #q_shift = q[0]  # shift to the first q point
+        #Iq_smooth /= Iq_smooth[0] # normalize Iq(q_shift)=1
+        # normalize Iq to area = 1?
+
+        # all_Iq.append(Iq)
+        all_Iq.append(Iq_smooth)
         all_params.append((phi, meanL, sigmaL, sigmaD))
 
     all_Iq = np.array(all_Iq)
     all_params = np.array(all_params)
+    params_name = ["phi", "meanL", "sigmaL", "sigmaD"]
 
-    return q, all_Iq, all_params
+    return q, all_Iq, all_params, params_name
+
 
 def calc_Pq_for_params(q, all_system_params):
     all_Pq = []
@@ -507,8 +533,9 @@ def calc_Pq_for_params(q, all_system_params):
     return np.array(all_Pq)
 
 
-def plot_Iq_versus_params(folder, all_system_params):
-    q, all_Iq, all_params = read_Iq_from_folder(folder, all_system_params)
+def plot_Iq_versus_params(folder, dataset_file):
+    q, all_Iq, all_log10Iq, all_params, params_name = read_Iq_dataset(dataset_file)
+    # q, all_Iq, all_params = read_Iq_from_folder(folder, all_system_params)
     # plot I(q) versus q curves, colored by different parameters
 
     # Create figure with 2 rows x 2 columns for I(q) plots
@@ -542,14 +569,14 @@ def plot_Iq_versus_params(folder, all_system_params):
             label = f"φ={param_vals[0]:.2f}, L/D={param_vals[1]:.1f}, σL={param_vals[2]:.2f}, σD={param_vals[3]:.2f}"
 
             # Plot I(q)
-            ax.plot(q, Iq, "-", color=color, alpha=0.7, markersize=4, linewidth=1.5,
-                    label=label if (ax_idx == 0 and i == 0) else "")  # only show one legend entry to avoid clutter
+            ax.plot(q, Iq, "-", color=color, alpha=0.7, markersize=4, linewidth=0.5, label=label if (ax_idx == 0 and i == 0) else "")  # only show one legend entry to avoid clutter
 
         # Subplot formatting
-        ax.set_xlabel("q", fontsize=12)
-        ax.set_ylabel(r"$I(q)$", fontsize=12)
-        ax.set_title(f"I(q) colored by {param_name}", fontsize=14, fontweight="bold")
+        ax.set_xlabel("q", fontsize=9)
+        ax.set_ylabel(r"$I(q)$", fontsize=9)
+        ax.set_title(f"I(q) colored by {param_name}", fontsize=9, fontweight="bold")
         ax.set_yscale("log")
+        #ax.set_xscale("log")
         ax.grid(True, which="both", linestyle="--", linewidth=0.5, alpha=0.7)
 
         # Add colorbar for each subplot
@@ -561,9 +588,147 @@ def plot_Iq_versus_params(folder, all_system_params):
     plt.tight_layout()
 
     # Save the plot
-    sys_param = all_system_params[0]
-    output_filename = f"{folder}/Iq_versus_params_comparison_{sys_param['pd_type']}.png"
+    output_filename = f"{folder}/Iq_versus_params_comparison.png"
     plt.savefig(output_filename, dpi=300, bbox_inches="tight")
 
     print(f"Plot saved as: {output_filename}")
     plt.show()
+
+
+def build_Iq_dataset(folder, label, all_system_params):
+    q, all_Iq, all_params, params_name = read_Iq_from_folder(folder, all_system_params)
+    # save to npz file
+    all_log10Iq = np.log10(all_Iq)
+    np.savez_compressed(f"{folder}/{label}_log10Iq_dataset.npz", q=q, all_Iq=all_Iq, all_log10Iq=all_log10Iq, all_params=all_params, params_name=params_name)
+    print(f"I(q) dataset saved to {folder}/{label}_log10Iq_dataset.npz")
+
+    # in addition, we build train and test datasets
+    n_samples = all_Iq.shape[0]
+    indices = np.arange(n_samples)
+    np.random.shuffle(indices)
+    split_idx = int(n_samples * 0.8)
+    train_idx, test_idx = indices[:split_idx], indices[split_idx:]
+    np.savez_compressed(f"{folder}/{label}_log10Iq_dataset_train.npz", q=q, all_Iq=all_Iq[train_idx], all_log10Iq=all_log10Iq[train_idx], all_params=all_params[train_idx], params_name=params_name)
+    np.savez_compressed(f"{folder}/{label}_log10Iq_dataset_test.npz", q=q, all_Iq=all_Iq[test_idx], all_log10Iq=all_log10Iq[test_idx], all_params=all_params[test_idx], params_name=params_name)
+    print(f"Train and test datasets saved to {folder}/{label}_log10Iq_dataset_train.npz and {label}_log10Iq_dataset_test.npz")
+
+    # Compute stats for train dataset
+    mean_log10Iq_train = np.mean(all_log10Iq[train_idx], axis=0)
+    std_log10Iq_train = np.std(all_Iq[train_idx], axis=0)
+    mean_params_train = np.mean(all_params[train_idx], axis=0)
+    std_params_train = np.std(all_params[train_idx], axis=0)
+
+    # Save train stats
+    np.savez_compressed(f"{folder}/{label}_log10Iq_dataset_train_stats.npz", mean_log10Iq=mean_log10Iq_train, std_log10Iq=std_log10Iq_train, mean_params=mean_params_train, std_params=std_params_train, params_name=params_name)
+    print(f"Train dataset stats saved to {folder}/{label}_log10Iq_dataset_train_stats.npz")
+
+    return q, all_Iq, all_log10Iq, all_params, params_name
+
+
+def read_Iq_dataset(dataset_file):
+    data = np.load(dataset_file)
+    q = data["q"]
+    all_Iq = data["all_Iq"]
+    all_log10Iq = data["all_log10Iq"]
+    all_params = data["all_params"]
+    params_name = data["params_name"]
+    print(f"I(q) dataset loaded from {dataset_file}")
+    return q, all_Iq, all_log10Iq, all_params, params_name
+
+
+def svd_analysis(folder, dataset_file):
+    q, all_Iq, all_log10Iq, all_params, params_name = read_Iq_dataset(dataset_file)
+
+    F = np.array(all_log10Iq)
+    print("samples, shape:", F.shape)
+    # Compute the full SVD on the all_Sk data (assumed shape: (n_samples, n_q))
+    U, S, Vh = np.linalg.svd(F, full_matrices=False)
+    print("Singular values:", S)
+
+    # Create figure with two subplots
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
+
+    # Plot singular values
+    ax1.plot(range(len(S)), S, "o--", markerfacecolor="none")
+    ax1.set_xlabel("Index")
+    ax1.set_ylabel("Singular Value")
+    ax1.set_title("Singular Values from SVD")
+
+    # Plot first three singular vectors I(q) vs q
+    for i in range(3):
+        ax2.plot(q, Vh[i, :], label=f"V{i+1}")
+    ax2.set_xlabel("q")
+    ax2.set_ylabel("log10(I(q)) from V")
+    ax2.set_title("First Three Singular Vectors")
+    ax2.legend()
+
+    plt.tight_layout()
+    plt.savefig(os.path.join(folder, "singular_values_and_vectors.png"), dpi=300)
+    plt.show()
+
+    projection = np.dot(F, np.transpose(Vh))  # Project data onto the right singular vectors
+    n_params = len(params_name)
+    fig = plt.figure(figsize=(6 * (n_params + 1), 6))
+
+    for i in range(n_params):
+        ax = fig.add_subplot(1, n_params, i + 1, projection="3d")
+        print("all_params.shape", all_params.shape)
+        sc = ax.scatter(projection[:, 0], projection[:, 1], projection[:, 2], c=all_params[:, i], cmap="jet", s=4)
+        ax.set_title(f"SVD Projection colored by {params_name[i]}")
+        ax.set_xlabel("U1")
+        ax.set_ylabel("U2")
+        ax.set_zlabel("U3")
+        fig.colorbar(sc, ax=ax, label=params_name[i], shrink=0.5)
+        nnd = calc_nearest_neighbor_distance(projection, all_params[:, i])
+        ax.set_title(f"SVD {params_name[i]} (NND: {nnd:.2f})")
+
+    plt.tight_layout(pad=1.0)
+    svd_proj_path = os.path.join(folder, "svd_projection_scatter.png")
+    plt.savefig(svd_proj_path, dpi=300)
+    plt.show()
+
+    # Add parameter distribution histograms
+    fig_hist = plt.figure(figsize=(4 * n_params, 4))
+    for i in range(n_params):
+        ax = fig_hist.add_subplot(1, n_params, i + 1)
+        ax.hist(all_params[:, i], bins=30, alpha=0.7, edgecolor="black")
+        ax.set_xlabel(params_name[i])
+        ax.set_ylabel("Frequency")
+        ax.set_title(f"Distribution of {params_name[i]}")
+        ax.grid(True, alpha=0.3)
+
+    plt.tight_layout(pad=0.3)
+    plt.savefig(os.path.join(folder, "parameter_distributions.png"), dpi=300)
+    plt.show()
+
+    # Save SVD results
+    np.savez_compressed(os.path.join(folder, "svd_results.npz"), U=U, S=S, Vh=Vh, q=q, projection=projection, all_params=all_params, params_name=params_name)
+
+    return Vh
+
+
+def calc_nearest_neighbor_distance(SqV, C):
+
+    # Step 1: Build a k-d tree for efficient neighbor search
+    tree = cKDTree(SqV)  # Use only spatial coordinates (x, y, z)
+    distances, indices = tree.query(SqV, k=2)  # Find nearest neighbors (k=2)
+
+    # Step 2: Compute color differences
+    color_differences = np.abs(C - C[indices[:, 1]])
+
+    # Step 3: Normalize by color range
+    color_min = np.min(C)  # Minimum color value
+    color_max = np.max(C)  # Maximum color value
+    color_range = color_max - color_min  # Range of color values
+
+    # Avoid division by zero if all color values are the same
+    if color_range == 0:
+        normalized_differences = np.zeros_like(color_differences)
+    else:
+        normalized_differences = color_differences / color_range * 2
+
+    # Step 4: Compute average normalized color difference
+    avg_normalized_difference = np.mean(normalized_differences)
+
+    # print("Average Normalized Color Difference (by range):", avg_normalized_difference)
+    return avg_normalized_difference

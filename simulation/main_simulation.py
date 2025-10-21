@@ -49,7 +49,7 @@ def main(args):
     )
 
     # render(folder, "compressed.gsd", frame=-1) # no need, confirm OVITO works
-    q_values = np.linspace(1.0, 13, 80)
+    q_values = np.linspace(3.0, 13, 80)
     # q_values = np.logspace(np.log10(0.1), np.log10(20), 200)
     run_sampling(
         save_dump_detail=args.save_dump_detail,
