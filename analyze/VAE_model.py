@@ -21,7 +21,8 @@ def denormalize_generated_Iq(folder, label, log10Iq_norm, params_norm):
 
     if "sigmaL" in params_name:
         sigmaL_index = list(params_name).index("sigmaL")
-        params_mean = np.delete(params_mean, sigmaL_index, axis=1)
+        params_mean = np.delete(params_mean, sigmaL_index, axis=0)
+        params_std = np.delete(params_std, sigmaL_index, axis=0)
         params_name = np.delete(params_name, sigmaL_index)
     params = params_norm * params_std + params_mean  # denormalize parameters
     return log10Iq, params
@@ -38,7 +39,8 @@ def normalize_Iq(folder, label, log10Iq, params):
     # we need to remove sigmaL since it's always 0
     if "sigmaL" in params_name:
         sigmaL_index = list(params_name).index("sigmaL")
-        params_mean = np.delete(params_mean, sigmaL_index, axis=1)
+        params_mean = np.delete(params_mean, sigmaL_index, axis=0)
+        params_std = np.delete(params_std, sigmaL_index, axis=0)
         params_name = np.delete(params_name, sigmaL_index)
     params_norm = (params - params_mean) / params_std  # normalize parameters
     return log10Iq_norm, params_norm
@@ -60,16 +62,9 @@ class logIqDataset(Dataset):
         print(data_stats.keys())
         self.log10Iq_mean = data_stats["mean_log10Iq"]
         self.log10Iq_std = data_stats["std_log10Iq"]
-        params_name = data_stats
+        params_name = data_stats["params_name"]
         self.params_mean = data_stats["mean_params"]
         self.params_std = data_stats["std_params"]
-
-        # we need to remove sigmaL since it's always 0
-        if "sigmaL" in params_name:
-            sigmaL_index = list(self.params_name).index("sigmaL")
-            self.params = np.delete(self.params, sigmaL_index, axis=1)
-            self.params_name = np.delete(self.params_name, sigmaL_index)
-            print("Removed sigmaL from params")
 
         self.q = Iq_data["q"]
         self.log10Iq = (Iq_data["all_log10Iq"] - self.log10Iq_mean) / self.log10Iq_std  # normalize to mean=0, std=1 for each q point
@@ -78,6 +73,12 @@ class logIqDataset(Dataset):
         self.params = Iq_params
         self.params_name = Iq_data["params_name"]
 
+        # we need to remove sigmaL since it's always 0
+        if "sigmaL" in self.params_name:
+            sigmaL_index = list(self.params_name).index("sigmaL")
+            self.params = np.delete(self.params, sigmaL_index, axis=1)
+            self.params_name = np.delete(self.params_name, sigmaL_index)
+            print("Removed sigmaL from params")
 
 
         print("Dataset initialized:")
@@ -181,7 +182,7 @@ class VAE(nn.Module):
 
     def forward(self, x, u=None, *, deterministic=False):
         mu, logvar = self.encoder(x)
-        epsilons = torch.randn(10, *mu.shape, device=mu.device)
+        epsilons = torch.randn(100, *mu.shape, device=mu.device)
         z_samples = mu.unsqueeze(0) + epsilons * (0.5 * logvar).exp().unsqueeze(0)
         recons = self.decoder(z_samples)
         recon_avg = recons.mean(dim=0)
@@ -738,7 +739,7 @@ def visualize_param_in_latent_space(
 ):
     """
     Visualize the distribution of the parameters from the dataset in the latent space (assume latent_dim=3).
-    Plots both mu and logvar distributions colored by parameter 1 and 2.
+    Plots both mu and logvar distributions colored by all parameters (up to 3).
     Args:
         model_path: Path to saved model state dict
         folder: Path to folder containing training data
@@ -776,18 +777,22 @@ def visualize_param_in_latent_space(
     # Denormalize parameters for color mapping
     param1 = []
     param2 = []
+    param3 = []
     for i in range(params.shape[0]):
         _, p_denorm = denormalize_generated_Iq(folder, label, np.zeros(100), params[i])
         param1.append(p_denorm[0])
         if len(p_denorm) > 1:
             param2.append(p_denorm[1])
+        if len(p_denorm) > 2:
+            param3.append(p_denorm[2])
     param1 = np.array(param1)
     param2 = np.array(param2) if len(param2) > 0 else None
-    # 3D scatter plots: mu/param1, mu/param2, logvar/param1, logvar/param2
+    param3 = np.array(param3) if len(param3) > 0 else None
+    # 3D scatter plots: mu/param1, mu/param2, mu/param3, logvar/param1, logvar/param2, logvar/param3
     from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
-    fig = plt.figure(figsize=(8, 8))
+    fig = plt.figure(figsize=(12, 8))
     # mu colored by param1
-    ax1 = fig.add_subplot(2, 2, 1, projection="3d")
+    ax1 = fig.add_subplot(2, 3, 1, projection="3d")
     sc1 = ax1.scatter(
         latent_mus[:, 0],
         latent_mus[:, 1],
@@ -806,7 +811,7 @@ def visualize_param_in_latent_space(
     ax1.set_title("Parameter 1 in latent mu space")
     # mu colored by param2
     if param2 is not None and param2.shape[0] == latent_mus.shape[0]:
-        ax2 = fig.add_subplot(2, 2, 2, projection="3d")
+        ax2 = fig.add_subplot(2, 3, 2, projection="3d")
         sc2 = ax2.scatter(
             latent_mus[:, 0],
             latent_mus[:, 1],
@@ -824,11 +829,33 @@ def visualize_param_in_latent_space(
         ax2.set_zlabel("Latent mu 3")
         ax2.set_title("Parameter 2 in latent mu space")
     else:
-        ax2 = fig.add_subplot(2, 2, 2, projection="3d")
+        ax2 = fig.add_subplot(2, 3, 2, projection="3d")
         ax2.set_title("No Parameter 2")
+    # mu colored by param3
+    if param3 is not None and param3.shape[0] == latent_mus.shape[0]:
+        ax3 = fig.add_subplot(2, 3, 3, projection="3d")
+        sc3 = ax3.scatter(
+            latent_mus[:, 0],
+            latent_mus[:, 1],
+            latent_mus[:, 2],
+            c=param3,
+            cmap="inferno",
+            s=20,
+            alpha=0.7,
+            label="Samples"
+        )
+        cbar3 = plt.colorbar(sc3, ax=ax3, pad=0.1)
+        cbar3.set_label("Parameter 3 (denormalized)")
+        ax3.set_xlabel("Latent mu 1")
+        ax3.set_ylabel("Latent mu 2")
+        ax3.set_zlabel("Latent mu 3")
+        ax3.set_title("Parameter 3 in latent mu space")
+    else:
+        ax3 = fig.add_subplot(2, 3, 3, projection="3d")
+        ax3.set_title("No Parameter 3")
     # logvar colored by param1
-    ax3 = fig.add_subplot(2, 2, 3, projection="3d")
-    sc3 = ax3.scatter(
+    ax4 = fig.add_subplot(2, 3, 4, projection="3d")
+    sc4 = ax4.scatter(
         latent_logvars[:, 0],
         latent_logvars[:, 1],
         latent_logvars[:, 2],
@@ -838,16 +865,16 @@ def visualize_param_in_latent_space(
         alpha=0.7,
         label="Samples"
     )
-    cbar3 = plt.colorbar(sc3, ax=ax3, pad=0.1)
-    cbar3.set_label("Parameter 1 (denormalized)")
-    ax3.set_xlabel("Latent logvar 1")
-    ax3.set_ylabel("Latent logvar 2")
-    ax3.set_zlabel("Latent logvar 3")
-    ax3.set_title("Parameter 1 in latent logvar space")
+    cbar4 = plt.colorbar(sc4, ax=ax4, pad=0.1)
+    cbar4.set_label("Parameter 1 (denormalized)")
+    ax4.set_xlabel("Latent logvar 1")
+    ax4.set_ylabel("Latent logvar 2")
+    ax4.set_zlabel("Latent logvar 3")
+    ax4.set_title("Parameter 1 in latent logvar space")
     # logvar colored by param2
     if param2 is not None and param2.shape[0] == latent_logvars.shape[0]:
-        ax4 = fig.add_subplot(2, 2, 4, projection="3d")
-        sc4 = ax4.scatter(
+        ax5 = fig.add_subplot(2, 3, 5, projection="3d")
+        sc5 = ax5.scatter(
             latent_logvars[:, 0],
             latent_logvars[:, 1],
             latent_logvars[:, 2],
@@ -857,21 +884,43 @@ def visualize_param_in_latent_space(
             alpha=0.7,
             label="Samples"
         )
-        cbar4 = plt.colorbar(sc4, ax=ax4, pad=0.1)
-        cbar4.set_label("Parameter 2 (denormalized)")
-        ax4.set_xlabel("Latent logvar 1")
-        ax4.set_ylabel("Latent logvar 2")
-        ax4.set_zlabel("Latent logvar 3")
-        ax4.set_title("Parameter 2 in latent logvar space")
+        cbar5 = plt.colorbar(sc5, ax=ax5, pad=0.1)
+        cbar5.set_label("Parameter 2 (denormalized)")
+        ax5.set_xlabel("Latent logvar 1")
+        ax5.set_ylabel("Latent logvar 2")
+        ax5.set_zlabel("Latent logvar 3")
+        ax5.set_title("Parameter 2 in latent logvar space")
     else:
-        ax4 = fig.add_subplot(2, 2, 4, projection="3d")
-        ax4.set_title("No Parameter 2")
+        ax5 = fig.add_subplot(2, 3, 5, projection="3d")
+        ax5.set_title("No Parameter 2")
+    # logvar colored by param3
+    if param3 is not None and param3.shape[0] == latent_logvars.shape[0]:
+        ax6 = fig.add_subplot(2, 3, 6, projection="3d")
+        sc6 = ax6.scatter(
+            latent_logvars[:, 0],
+            latent_logvars[:, 1],
+            latent_logvars[:, 2],
+            c=param3,
+            cmap="inferno",
+            s=20,
+            alpha=0.7,
+            label="Samples"
+        )
+        cbar6 = plt.colorbar(sc6, ax=ax6, pad=0.1)
+        cbar6.set_label("Parameter 3 (denormalized)")
+        ax6.set_xlabel("Latent logvar 1")
+        ax6.set_ylabel("Latent logvar 2")
+        ax6.set_zlabel("Latent logvar 3")
+        ax6.set_title("Parameter 3 in latent logvar space")
+    else:
+        ax6 = fig.add_subplot(2, 3, 6, projection="3d")
+        ax6.set_title("No Parameter 3")
     plt.tight_layout()
     if save_path:
         plt.savefig(save_path, dpi=300, bbox_inches="tight")
         print(f"Visualization saved to {save_path}")
     plt.show()
-    return latent_mus, latent_logvars, param1, param2 if param2 is not None else None
+    return latent_mus, latent_logvars, param1, param2, param3
 
 def show_vae_random_reconstructions(
     folder: str,
