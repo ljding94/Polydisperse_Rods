@@ -485,7 +485,7 @@ def smooth_Iq(q, Iq, phi):
     return Iq_smooth
 
 
-def read_Iq_from_folder(folder, all_system_params):
+def read_Iq_from_folder(folder, all_system_params, max_num_samples=None):
     all_params = []
     all_Iq = []
     for system_params in all_system_params:
@@ -506,6 +506,9 @@ def read_Iq_from_folder(folder, all_system_params):
         # all_Iq.append(Iq)
         all_Iq.append(Iq_smooth)
         all_params.append((phi, meanL, sigmaL, sigmaD))
+        if max_num_samples is not None and len(all_Iq) >= max_num_samples:
+            print(f"Reached max number of samples: {max_num_samples}")
+            break
 
     all_Iq = np.array(all_Iq)
     all_params = np.array(all_params)
@@ -595,8 +598,8 @@ def plot_Iq_versus_params(folder, dataset_file):
     plt.show()
 
 
-def build_Iq_dataset(folder, label, all_system_params):
-    q, all_Iq, all_params, params_name = read_Iq_from_folder(folder, all_system_params)
+def build_Iq_dataset(folder, label, all_system_params, max_num_samples=None):
+    q, all_Iq, all_params, params_name = read_Iq_from_folder(folder, all_system_params, max_num_samples=max_num_samples)
     # save to npz file
     all_log10Iq = np.log10(all_Iq)
     np.savez_compressed(f"{folder}/{label}_log10Iq_dataset.npz", q=q, all_Iq=all_Iq, all_log10Iq=all_log10Iq, all_params=all_params, params_name=params_name)

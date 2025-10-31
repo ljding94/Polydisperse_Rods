@@ -80,7 +80,6 @@ class logIqDataset(Dataset):
             self.params_name = np.delete(self.params_name, sigmaL_index)
             print("Removed sigmaL from params")
 
-
         print("Dataset initialized:")
         print("self.params_name", self.params_name)
         print("self.log10Iq.shape, self.q.shape, self.params.shape")
@@ -182,7 +181,7 @@ class VAE(nn.Module):
 
     def forward(self, x, u=None, *, deterministic=False):
         mu, logvar = self.encoder(x)
-        epsilons = torch.randn(100, *mu.shape, device=mu.device)
+        epsilons = torch.randn(100, *mu.shape, device=mu.device) # hardcode 100 samples
         z_samples = mu.unsqueeze(0) + epsilons * (0.5 * logvar).exp().unsqueeze(0)
         recons = self.decoder(z_samples)
         recon_avg = recons.mean(dim=0)
@@ -591,6 +590,7 @@ def train_and_save_inferrer(
     )
 
 
+
 def plot_loss_curves(folder: str, label: str, show: bool = True):
     """
     -----------------------------------------------------------
@@ -927,7 +927,7 @@ def show_vae_random_reconstructions(
     label: str,
     model_path: str | None = None,
     model: VAE | None = None,
-    latent_dim: int = 6,
+    latent_dim: int = 3,
     num_samples: int = 4,
     device: str | torch.device | None = None,
 ):
@@ -1018,8 +1018,8 @@ def show_gen_random_reconstruction(
     label: str,
     model_path: str | None = None,
     model: Generator | None = None,
-    latent_dim: int = 6,
-    input_dim: int = 2,
+    latent_dim: int = 3,
+    input_dim: int = 3,
     num_samples: int = 4,
     device: str | torch.device | None = None,
 ):
@@ -1075,7 +1075,7 @@ def show_gen_random_reconstruction(
         ax_in = axes[idx, 0]
         Iq_np, p_np = denormalize_generated_Iq(folder, label, Iq_np, p_np)
         ax_in.plot(Iq_np, "b-", linewidth=1.5, label="Input")
-        ax_in.set_title(f"Input #{idx}, params = [{p_np[0]:+.3f}, {p_np[1]:+.3f}]")
+        ax_in.set_title(f"Input #{idx}, params = [{p_np[0]:+.3f}, {p_np[1]:+.3f}, {p_np[2]:+.3f}]")
         ax_in.set_xlabel("Feature index")
         ax_in.set_ylabel("log10(I(q))")
         ax_in.grid(True, alpha=0.3)
@@ -1085,7 +1085,7 @@ def show_gen_random_reconstruction(
         recon_np, _ = denormalize_generated_Iq(folder, label, recon_np, p_np)
         ax_out.plot(recon_np, "r-", linewidth=1.5, label="Reconstruction")
         p_str = ", ".join([f"{v:+.3f}" for v in p_np])
-        ax_out.set_title(f"Recon #{idx}\nParams = [{p_str}]")
+        ax_out.set_title(f"Gen #{idx}\nParams = [{p_str}]")
         ax_out.set_xlabel("Feature index")
         ax_out.set_ylabel("log10(I(q))")
         ax_out.grid(True, alpha=0.3)
@@ -1213,3 +1213,316 @@ def show_infer_random_analysis(
         r2 = np.corrcoef(all_true_params_denorm[:, i], all_pred_params_denorm[:, i])[0, 1]**2
         rmse = np.sqrt(np.mean((all_true_params_denorm[:, i] - all_pred_params_denorm[:, i])**2))
         print(f"  {param_names[i]}: R² = {r2:.4f}, RMSE = {rmse:.4f}")
+
+
+def LS_fit_params_with_gen(target_log10Iq, gen_model=None, model_path=None, folder=None, label=None, latent_dim=3, input_dim=3, target_loss=1e-6, max_steps=3000, lr=1e-2):
+    """
+    Fit parameters using least squares to match the target_log10Iq scattering function using the generator model.
+
+    Args:
+        target_log10Iq: The target log10(I(q)) array to fit (numpy array of shape (100,))
+        gen_model: The trained Generator model (optional if model_path provided)
+        model_path: Path to the saved generator model state dict (optional if gen_model provided)
+        folder: Path to the data folder
+        label: Dataset label for loading stats
+        latent_dim: Latent dimension (default 3)
+        input_dim: Input parameter dimension (default 3)
+        target_loss: Target loss threshold to stop optimization (default 1e-6)
+        max_steps: Maximum number of optimization steps (default 1000)
+        lr: Learning rate for optimization (default 1e-2)
+
+    Returns:
+        fitted_params: The fitted parameters (denormalized)
+        final_loss: The final loss value
+        param_history: List of parameter values at each step (normalized)
+        loss_history: List of loss values at each step
+    """
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    # Load/validate the model
+    if gen_model is None:
+        assert model_path is not None, "Provide `gen_model` or `model_path`."
+        gen_model = Generator(input_dim=input_dim, latent_dim=latent_dim).to(device)
+        gen_model.load_state_dict(torch.load(model_path, map_location=device))
+    else:
+        gen_model = gen_model.to(device)
+    gen_model.eval()    # Load normalization stats
+    data_stats = np.load(f"{folder}/{label}_log10Iq_dataset_train_stats.npz")
+    log10Iq_mean = data_stats["mean_log10Iq"]
+    log10Iq_std = data_stats["std_log10Iq"]
+    params_name = data_stats["params_name"]
+    params_mean = data_stats["mean_params"]
+    params_std = data_stats["std_params"]
+
+    # Remove sigmaL if present (as done in dataset)
+    if "sigmaL" in params_name:
+        sigmaL_index = list(params_name).index("sigmaL")
+        params_mean = np.delete(params_mean, sigmaL_index, axis=0)
+        params_std = np.delete(params_std, sigmaL_index, axis=0)
+        params_name = np.delete(params_name, sigmaL_index)
+
+    # Normalize target Iq
+    target_norm = (target_log10Iq - log10Iq_mean) / log10Iq_std
+    target_norm = torch.tensor(target_norm, dtype=torch.float32).unsqueeze(0).to(device)  # (1, 100)
+
+    # Initialize parameters to optimize (start from random normal, since normalized)
+    params_init = torch.randn(input_dim, requires_grad=True, device=device)
+
+    # Optimizer
+    optimizer = optim.Adam([params_init], lr=lr)
+
+    # Track convergence
+    param_history = []
+    loss_history = []
+
+    print(f"Starting least squares fitting with target_loss={target_loss}, max_steps={max_steps}, lr={lr}")
+
+    for step in range(max_steps):
+        optimizer.zero_grad()
+
+        # Generate Iq from current parameters
+        gen_Iq, _, _ = gen_model(params_init.unsqueeze(0))  # (1, 100)
+
+        # Compute MSE loss
+        loss = F.mse_loss(gen_Iq, target_norm)
+
+        # Backprop and update
+        loss.backward()
+        optimizer.step()
+
+        # Track history
+        param_history.append(params_init.detach().cpu().numpy().copy())
+        loss_history.append(loss.item())
+
+        # Check convergence
+        if loss.item() < target_loss:
+            print(f"Converged at step {step+1} with loss {loss.item():.2e}")
+            break
+
+        if (step + 1) % 100 == 0:
+            print(f"Step {step+1}/{max_steps}, Loss: {loss.item():.2e}")
+
+    # Denormalize fitted parameters
+    params_norm = params_init.detach().cpu().numpy()
+    fitted_params = params_norm * params_std + params_mean
+
+    final_loss = loss.item()
+    print(f"Fitting completed. Final loss: {final_loss:.2e}")
+    print(f"Fitted parameters: {fitted_params}")
+
+    return fitted_params, final_loss, param_history, loss_history
+
+def show_sample_LS_fitting(folder, label, model_path, num_samples=3, num_fits_per_sample=3, latent_dim=3, input_dim=3, target_loss=1e-6, max_steps=1000, lr=1e-2):
+    """
+    Plot least squares fitting results for sample log10Iq data.
+
+    For each of num_samples test samples, performs num_fits_per_sample fittings with different
+    random initializations to show convergence. Plots Iq comparisons and parameter trajectories.
+
+    Args:
+        folder: Path to data folder
+        label: Dataset label
+        model_path: Path to saved generator model
+        num_samples: Number of test samples to use (default 3)
+        num_fits_per_sample: Number of fits per sample (default 3)
+        latent_dim: Latent dimension (default 3)
+        input_dim: Input parameter dimension (default 3)
+        target_loss: Target loss for fitting (default 1e-6)
+        max_steps: Max steps for fitting (default 1000)
+        lr: Learning rate for fitting (default 1e-2)
+    """
+    from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+
+    # Load test data
+    test_loader, _ = create_dataloader(folder, label, "test", batch_size=1, shuffle=True)
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    # Load model
+    gen_model = Generator(input_dim=input_dim, latent_dim=latent_dim).to(device)
+    gen_model.load_state_dict(torch.load(model_path, map_location=device))
+    gen_model.eval()
+
+    # Get data stats for denormalization
+    data_stats = np.load(f"{folder}/{label}_log10Iq_dataset_train_stats.npz")
+    log10Iq_mean = data_stats["mean_log10Iq"]
+    log10Iq_std = data_stats["std_log10Iq"]
+    params_name = data_stats["params_name"]
+    params_mean = data_stats["mean_params"]
+    params_std = data_stats["std_params"]
+
+    if "sigmaL" in params_name:
+        sigmaL_index = list(params_name).index("sigmaL")
+        params_mean = np.delete(params_mean, sigmaL_index, axis=0)
+        params_std = np.delete(params_std, sigmaL_index, axis=0)
+        params_name = np.delete(params_name, sigmaL_index)
+
+    # Select num_samples random samples
+    samples = []
+    for i in range(num_samples):
+        log10Iq, q, p = next(iter(test_loader))
+        log10Iq = log10Iq.squeeze().numpy()
+        p = p.squeeze().numpy()
+        # Denormalize
+        log10Iq_denorm, p_denorm = denormalize_generated_Iq(folder, label, log10Iq, p)
+        samples.append((log10Iq_denorm, p_denorm))
+
+    # For each sample, fit num_fits_per_sample times
+    all_fitted_params = []
+    all_param_histories = []
+    all_loss_histories = []
+
+    for sample_idx, (target_Iq, true_p) in enumerate(samples):
+        fitted_for_sample = []
+        histories_for_sample = []
+        losses_for_sample = []
+
+        print(f"Fitting sample {sample_idx+1}/{num_samples}")
+        for fit_idx in range(num_fits_per_sample):
+            fitted_p, final_loss, param_hist, loss_hist = LS_fit_params_with_gen(
+                target_Iq, gen_model=gen_model, folder=folder, label=label,
+                latent_dim=latent_dim, input_dim=input_dim,
+                target_loss=target_loss, max_steps=max_steps, lr=lr
+            )
+            fitted_for_sample.append(fitted_p)
+            histories_for_sample.append(param_hist)
+            losses_for_sample.append(loss_hist)
+
+        all_fitted_params.append(fitted_for_sample)
+        all_param_histories.append(histories_for_sample)
+        all_loss_histories.append(losses_for_sample)
+
+    # Now plot
+    fig = plt.figure(figsize=(18, 6 * num_samples))
+
+    for sample_idx in range(num_samples):
+        # Iq comparison
+        ax1 = fig.add_subplot(num_samples, 2, 2 * sample_idx + 1)
+        target_Iq = samples[sample_idx][0]
+        ax1.plot(target_Iq, 'b-', label='Target Iq', linewidth=2)
+
+        for fit_idx in range(num_fits_per_sample):
+            # Generate fitted Iq
+            fitted_p_norm = (all_fitted_params[sample_idx][fit_idx] - params_mean) / params_std
+            fitted_p_tensor = torch.tensor(fitted_p_norm, dtype=torch.float32).unsqueeze(0).to(device)
+            with torch.no_grad():
+                gen_Iq, _, _ = gen_model(fitted_p_tensor)
+            gen_Iq_denorm, _ = denormalize_generated_Iq(folder, label, gen_Iq.squeeze().cpu().numpy(), fitted_p_norm)
+            ax1.plot(gen_Iq_denorm, '--', label=f'Fitted Iq {fit_idx+1}', linewidth=1.5)
+
+        ax1.set_xlabel('q index')
+        ax1.set_ylabel('log10(I(q))')
+        ax1.set_title(f'Sample {sample_idx+1}: Iq Comparison')
+        ax1.legend()
+        ax1.grid(True, alpha=0.3)
+
+        # 3D parameter trajectory
+        ax2 = fig.add_subplot(num_samples, 2, 2 * sample_idx + 2, projection='3d')
+        for fit_idx in range(num_fits_per_sample):
+            param_hist = np.array(all_param_histories[sample_idx][fit_idx])
+            ax2.plot(param_hist[:, 0], param_hist[:, 1], param_hist[:, 2], label=f'Fit {fit_idx+1}')
+            ax2.scatter(param_hist[0, 0], param_hist[0, 1], param_hist[0, 2], marker='o', s=50, label=f'Start {fit_idx+1}')
+            ax2.scatter(param_hist[-1, 0], param_hist[-1, 1], param_hist[-1, 2], marker='x', s=50, label=f'End {fit_idx+1}')
+
+        # Plot true params
+        true_p_norm = (samples[sample_idx][1] - params_mean) / params_std
+        ax2.scatter(true_p_norm[0], true_p_norm[1], true_p_norm[2], marker='*', s=100, c='red', label='True params')
+
+        ax2.set_xlabel('Param 1 (norm)')
+        ax2.set_ylabel('Param 2 (norm)')
+        ax2.set_zlabel('Param 3 (norm)')
+        ax2.set_title(f'Sample {sample_idx+1}: Parameter Trajectories')
+        ax2.legend()
+
+    plt.tight_layout()
+    save_path = f"{folder}/{label}_LS_fitting_samples.png"
+    plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    print(f"Plot saved to {save_path}")
+    plt.show()
+
+
+
+def fit_test_data(folder: str, label: str, model_path: str, latent_dim: int = 3, input_dim: int = 3, target_loss: float = 1e-6, max_steps: int = 3000, lr: float = 1e-2):
+    """
+    Fit parameters for all test data using least squares with the trained generator model.
+
+    Args:
+        folder: Path to the data folder
+        label: Dataset label
+        model_path: Path to the saved generator model state dict
+        latent_dim: Latent dimension (default 3)
+        input_dim: Input parameter dimension (default 3)
+        target_loss: Target loss threshold for fitting (default 1e-6)
+        max_steps: Maximum number of optimization steps (default 1000)
+        lr: Learning rate for optimization (default 1e-2)
+
+    Saves fitted and true parameters to {folder}/{label}_test_fits.npz
+    """
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    # Load test data
+    test_loader, _ = create_dataloader(folder, label, "test", batch_size=1, shuffle=False)
+    print(f"Loaded {len(test_loader.dataset)} test samples")
+
+    # Load generator model
+    gen_model = Generator(input_dim=input_dim, latent_dim=latent_dim).to(device)
+    gen_model.load_state_dict(torch.load(model_path, map_location=device))
+    gen_model.eval()
+
+    # Get data stats for denormalization
+    data_stats = np.load(f"{folder}/{label}_log10Iq_dataset_train_stats.npz")
+    params_name = data_stats["params_name"]
+    params_mean = data_stats["mean_params"]
+    params_std = data_stats["std_params"]
+
+    if "sigmaL" in params_name:
+        sigmaL_index = list(params_name).index("sigmaL")
+        params_mean = np.delete(params_mean, sigmaL_index, axis=0)
+        params_std = np.delete(params_std, sigmaL_index, axis=0)
+        params_name = np.delete(params_name, sigmaL_index)
+
+    # Store results
+    all_true_params = []
+    all_fitted_params = []
+    all_final_losses = []
+
+    print("Starting least squares fitting for all test data...")
+
+    for idx, (log10Iq, q, p) in enumerate(test_loader):
+        if idx % 50 == 0:
+            print(f"Processing sample {idx+1}/{len(test_loader.dataset)}")
+
+        # Denormalize target Iq
+        log10Iq_np = log10Iq.squeeze().numpy()
+        p_np = p.squeeze().numpy()
+        target_Iq_denorm, true_p_denorm = denormalize_generated_Iq(folder, label, log10Iq_np, p_np)
+
+        # Fit parameters
+        fitted_p, final_loss, _, _ = LS_fit_params_with_gen(
+            target_Iq_denorm, gen_model=gen_model, folder=folder, label=label,
+            latent_dim=latent_dim, input_dim=input_dim,
+            target_loss=target_loss, max_steps=max_steps, lr=lr
+        )
+
+        all_true_params.append(true_p_denorm)
+        all_fitted_params.append(fitted_p)
+        all_final_losses.append(final_loss)
+
+    # Convert to numpy arrays
+    all_true_params = np.array(all_true_params)
+    all_fitted_params = np.array(all_fitted_params)
+    all_final_losses = np.array(all_final_losses)
+
+    # Save to npz file
+    save_path = os.path.join(folder, f"{label}_test_fits.npz")
+    np.savez(save_path,
+             true_params=all_true_params,
+             fitted_params=all_fitted_params,
+             final_losses=all_final_losses,
+             params_name=params_name)
+
+    print(f"Saved fitted results to {save_path}")
+    print(f"Mean final loss: {all_final_losses.mean():.2e}")
+    print(f"Std final loss: {all_final_losses.std():.2e}")
+
+    return all_true_params, all_fitted_params, all_final_losses

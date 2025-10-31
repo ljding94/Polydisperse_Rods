@@ -74,13 +74,17 @@ def main():
         svd_analysis(folder, dataset_file)
 
     if 1:
-        folder = "../data/20251005"
-        run_type = "rand"
-        run_num = 0
+        #folder = "../data/20251005" # uniform rand data ~ 5000
         pd_type = "uniform"
+
+        #folder = "../data/20251016" # normal rand data ~ 1000
+        folder = "../data/20251022" # normal rand data ~ 5000
+        pd_type = "normal"
+
+        run_type = "rand"
         N = 20000
         all_system_params = []
-        for run_num in range(5120):
+        for run_num in range(6036):
             system_params = {
                 "run_type": run_type,
                 "run_num": run_num,
@@ -89,7 +93,7 @@ def main():
             }
             all_system_params.append(system_params)
         label = f"{run_type}_{pd_type}_N{N:.0f}"
-        build_Iq_dataset(folder, label, all_system_params)
+        build_Iq_dataset(folder, label, all_system_params, max_num_samples=5000)
         dataset_file = f"{folder}/{label}_log10Iq_dataset.npz"
         plot_Iq_versus_params(folder, dataset_file)
         svd_analysis(folder, dataset_file)
