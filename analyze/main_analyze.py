@@ -74,12 +74,12 @@ def main():
         svd_analysis(folder, dataset_file)
 
     if 1:
-        #folder = "../data/20251005" # uniform rand data ~ 5000
+        folder = "../data/20251005" # uniform rand data ~ 5000
         pd_type = "uniform"
 
         #folder = "../data/20251016" # normal rand data ~ 1000
-        folder = "../data/20251022" # normal rand data ~ 5000
-        pd_type = "normal"
+        #folder = "../data/20251022" # normal rand data ~ 5000
+        #pd_type = "normal"
 
         run_type = "rand"
         N = 20000

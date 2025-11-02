@@ -1253,13 +1253,21 @@ def LS_fit_params_with_gen(target_log10Iq, gen_model=None, model_path=None, fold
     params_name = data_stats["params_name"]
     params_mean = data_stats["mean_params"]
     params_std = data_stats["std_params"]
+    min_params = data_stats["min_params"]
+    max_params = data_stats["max_params"]
 
     # Remove sigmaL if present (as done in dataset)
     if "sigmaL" in params_name:
         sigmaL_index = list(params_name).index("sigmaL")
         params_mean = np.delete(params_mean, sigmaL_index, axis=0)
         params_std = np.delete(params_std, sigmaL_index, axis=0)
+        min_params = np.delete(min_params, sigmaL_index, axis=0)
+        max_params = np.delete(max_params, sigmaL_index, axis=0)
         params_name = np.delete(params_name, sigmaL_index)
+
+    # Normalize parameter bounds for optimization
+    min_params_norm = (min_params - params_mean) / params_std
+    max_params_norm = (max_params - params_mean) / params_std
 
     # Normalize target Iq
     target_norm = (target_log10Iq - log10Iq_mean) / log10Iq_std
@@ -1290,6 +1298,10 @@ def LS_fit_params_with_gen(target_log10Iq, gen_model=None, model_path=None, fold
         loss.backward()
         optimizer.step()
 
+        # Clamp parameters to normalized bounds
+        with torch.no_grad():
+            params_init.data.clamp_(min_params_norm, max_params_norm)
+
         # Track history
         param_history.append(params_init.detach().cpu().numpy().copy())
         loss_history.append(loss.item())
@@ -1311,6 +1323,7 @@ def LS_fit_params_with_gen(target_log10Iq, gen_model=None, model_path=None, fold
     print(f"Fitted parameters: {fitted_params}")
 
     return fitted_params, final_loss, param_history, loss_history
+
 
 def show_sample_LS_fitting(folder, label, model_path, num_samples=3, num_fits_per_sample=3, latent_dim=3, input_dim=3, target_loss=1e-6, max_steps=1000, lr=1e-2):
     """
@@ -1441,7 +1454,6 @@ def show_sample_LS_fitting(folder, label, model_path, num_samples=3, num_fits_pe
     plt.show()
 
 
-
 def fit_test_data(folder: str, label: str, model_path: str, latent_dim: int = 3, input_dim: int = 3, target_loss: float = 1e-6, max_steps: int = 3000, lr: float = 1e-2):
     """
     Fit parameters for all test data using least squares with the trained generator model.
@@ -1526,3 +1538,88 @@ def fit_test_data(folder: str, label: str, model_path: str, latent_dim: int = 3,
     print(f"Std final loss: {all_final_losses.std():.2e}")
 
     return all_true_params, all_fitted_params, all_final_losses
+
+
+def visualize_LS_fitting_performance(fit_test_data_path):
+    """
+    Visualize the least squares fitting performance from the fit_test_data.npz file.
+
+    Args:
+        fit_test_data_path: Path to the .npz file containing fitting results
+    """
+    # Load the fitting data
+    data = np.load(fit_test_data_path)
+    true_params = data['true_params']
+    fitted_params = data['fitted_params']
+    final_losses = data['final_losses']
+    params_name = data['params_name']
+
+    # Remove sigmaL if present (as done elsewhere)
+    if "sigmaL" in params_name:
+        sigmaL_index = list(params_name).index("sigmaL")
+        params_name = np.delete(params_name, sigmaL_index)
+
+    num_params = true_params.shape[1]
+
+    # Create subplots: one for each parameter scatter plot, plus one for loss histogram
+    fig, axes = plt.subplots(1, num_params + 1, figsize=(6*(num_params + 1), 5))
+
+    param_names = [f'Parameter {i+1}' for i in range(num_params)]
+
+    # Scatter plots for each parameter
+    for i in range(num_params):
+        ax = axes[i]
+
+        # Scatter plot
+        ax.scatter(true_params[:, i], fitted_params[:, i], alpha=0.6, s=20, edgecolors='none')
+
+        # Perfect prediction line
+        min_val = min(true_params[:, i].min(), fitted_params[:, i].min())
+        max_val = max(true_params[:, i].max(), fitted_params[:, i].max())
+        ax.plot([min_val, max_val], [min_val, max_val], 'r--', linewidth=2, label='Perfect fit')
+
+        # Calculate R² and RMSE
+        r2 = np.corrcoef(true_params[:, i], fitted_params[:, i])[0, 1]**2
+        rmse = np.sqrt(np.mean((true_params[:, i] - fitted_params[:, i])**2))
+
+        ax.set_xlabel(f'True {param_names[i]}')
+        ax.set_ylabel(f'Fitted {param_names[i]}')
+        ax.set_title(f'{param_names[i]}\nR² = {r2:.4f}, RMSE = {rmse:.4f}')
+        ax.grid(True, alpha=0.3)
+        ax.legend()
+        ax.set_aspect('equal')
+
+    # Loss histogram
+    ax_loss = axes[-1]
+    ax_loss.hist(final_losses, bins=50, alpha=0.7, edgecolor='black')
+    ax_loss.set_xlabel('Final Loss')
+    ax_loss.set_ylabel('Frequency')
+    ax_loss.set_title(f'Final Loss Distribution\nMean: {final_losses.mean():.2e}, Std: {final_losses.std():.2e}')
+    ax_loss.grid(True, alpha=0.3)
+    ax_loss.set_yscale('log')  # Since losses can span orders of magnitude
+
+    plt.tight_layout()
+
+    # Save the plot
+    save_path = fit_test_data_path.replace('.npz', '_fitting_performance.png')
+    plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    print(f"Fitting performance visualization saved to {save_path}")
+    plt.show()
+
+    # Print summary statistics
+    print("\nFitting Performance Summary:")
+    print(f"Total samples: {len(final_losses)}")
+    print(f"Mean final loss: {final_losses.mean():.2e}")
+    print(f"Std final loss: {final_losses.std():.2e}")
+    print(f"Min final loss: {final_losses.min():.2e}")
+    print(f"Max final loss: {final_losses.max():.2e}")
+    print(f"Median final loss: {np.median(final_losses):.2e}")
+
+    for i in range(num_params):
+        r2 = np.corrcoef(true_params[:, i], fitted_params[:, i])[0, 1]**2
+        rmse = np.sqrt(np.mean((true_params[:, i] - fitted_params[:, i])**2))
+        mae = np.mean(np.abs(true_params[:, i] - fitted_params[:, i]))
+        print(f"\n{param_names[i]}:")
+        print(f"  R²: {r2:.4f}")
+        print(f"  RMSE: {rmse:.4f}")
+        print(f"  MAE: {mae:.4f}")

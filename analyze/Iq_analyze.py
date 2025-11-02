@@ -608,6 +608,7 @@ def build_Iq_dataset(folder, label, all_system_params, max_num_samples=None):
     # in addition, we build train and test datasets
     n_samples = all_Iq.shape[0]
     indices = np.arange(n_samples)
+    np.random.seed(42)  # Fixed seed for reproducible shuffling
     np.random.shuffle(indices)
     split_idx = int(n_samples * 0.8)
     train_idx, test_idx = indices[:split_idx], indices[split_idx:]
@@ -620,9 +621,11 @@ def build_Iq_dataset(folder, label, all_system_params, max_num_samples=None):
     std_log10Iq_train = np.std(all_log10Iq[train_idx], axis=0)
     mean_params_train = np.mean(all_params[train_idx], axis=0)
     std_params_train = np.std(all_params[train_idx], axis=0)
+    min_params_train = np.min(all_params[train_idx], axis=0)
+    max_params_train = np.max(all_params[train_idx], axis=0)
 
     # Save train stats
-    np.savez_compressed(f"{folder}/{label}_log10Iq_dataset_train_stats.npz", mean_log10Iq=mean_log10Iq_train, std_log10Iq=std_log10Iq_train, mean_params=mean_params_train, std_params=std_params_train, params_name=params_name)
+    np.savez_compressed(f"{folder}/{label}_log10Iq_dataset_train_stats.npz", mean_log10Iq=mean_log10Iq_train, std_log10Iq=std_log10Iq_train, mean_params=mean_params_train, std_params=std_params_train, min_params=min_params_train, max_params=max_params_train, params_name=params_name)
     print(f"Train dataset stats saved to {folder}/{label}_log10Iq_dataset_train_stats.npz")
 
     return q, all_Iq, all_log10Iq, all_params, params_name

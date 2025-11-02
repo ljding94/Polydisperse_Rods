@@ -14,8 +14,10 @@ def main():
         if 0:
             train_and_save_generator(folder, label, vae_path=f"{folder}/{label}_vae_state_dict.pt", input_dim=3, latent_dim=ld, num_epochs=300, fine_tune_epochs=300)
 
-        if 1:
-            fit_test_data(folder, label, model_path=f"{folder}/{label}_gen_state_dict.pt", latent_dim=ld, input_dim=3, target_loss=1e-5, max_steps=3000, lr=1e-2)
+        if 0:
+            fit_test_data(folder, label, model_path=f"{folder}/{label}_gen_state_dict.pt", latent_dim=ld, input_dim=3, target_loss=1e-4, max_steps=1000, lr=1e-2)
+
+        visualize_LS_fitting_performance(f"{folder}/{label}_test_fits.npz")
 
         #visualize_param_in_latent_space(f"{folder}/{label}_vae_state_dict.pt", folder, label, latent_dim=ld, save_path=f"{folder}/{label}_latent_distribution.png")
 
