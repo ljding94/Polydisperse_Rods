@@ -1215,7 +1215,7 @@ def show_infer_random_analysis(
         print(f"  {param_names[i]}: R² = {r2:.4f}, RMSE = {rmse:.4f}")
 
 
-def LS_fit_params_with_gen(target_log10Iq, gen_model=None, model_path=None, folder=None, label=None, latent_dim=3, input_dim=3, target_loss=1e-6, max_steps=3000, lr=1e-2):
+def LS_fit_params_with_gen(target_log10Iq, gen_model=None, model_path=None, folder=None, label=None, latent_dim=3, input_dim=3, target_loss=1e-6, max_steps=3000, lr=1e-2, rand_init=False):
     """
     Fit parameters using least squares to match the target_log10Iq scattering function using the generator model.
 
@@ -1230,6 +1230,7 @@ def LS_fit_params_with_gen(target_log10Iq, gen_model=None, model_path=None, fold
         target_loss: Target loss threshold to stop optimization (default 1e-6)
         max_steps: Maximum number of optimization steps (default 1000)
         lr: Learning rate for optimization (default 1e-2)
+        rand_init: Whether to randomize initial parameter guess (default False)
 
     Returns:
         fitted_params: The fitted parameters (denormalized)
@@ -1273,8 +1274,11 @@ def LS_fit_params_with_gen(target_log10Iq, gen_model=None, model_path=None, fold
     target_norm = (target_log10Iq - log10Iq_mean) / log10Iq_std
     target_norm = torch.tensor(target_norm, dtype=torch.float32).unsqueeze(0).to(device)  # (1, 100)
 
-    # Initialize parameters to optimize (start from random normal, since normalized)
-    params_init = torch.randn(input_dim, requires_grad=True, device=device)
+    # Initialize parameters to optimize (start from random normal if rand_init, else zeros, since normalized)
+    if rand_init:
+        params_init = torch.randn(input_dim, requires_grad=True, device=device)
+    else:
+        params_init = torch.zeros(input_dim, requires_grad=True, device=device)
 
     # Optimizer
     optimizer = optim.Adam([params_init], lr=lr)
@@ -1395,7 +1399,7 @@ def show_sample_LS_fitting(folder, label, model_path, num_samples=3, num_fits_pe
             fitted_p, final_loss, param_hist, loss_hist = LS_fit_params_with_gen(
                 target_Iq, gen_model=gen_model, folder=folder, label=label,
                 latent_dim=latent_dim, input_dim=input_dim,
-                target_loss=target_loss, max_steps=max_steps, lr=lr
+                target_loss=target_loss, max_steps=max_steps, lr=lr, rand_init=True
             )
             fitted_for_sample.append(fitted_p)
             histories_for_sample.append(param_hist)
