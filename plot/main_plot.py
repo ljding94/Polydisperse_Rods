@@ -39,6 +39,7 @@ def main():
     plot_LS_fitting_performance()
 
     # 9 more distribution (normal and lognormal)
+    plot_more_distributions_illustration()
 
     # 10 normal and lognormal generation MSE
 

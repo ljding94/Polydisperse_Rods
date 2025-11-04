@@ -1269,6 +1269,9 @@ def LS_fit_params_with_gen(target_log10Iq, gen_model=None, model_path=None, fold
     # Normalize parameter bounds for optimization
     min_params_norm = (min_params - params_mean) / params_std
     max_params_norm = (max_params - params_mean) / params_std
+    # Convert bounds to torch tensors on the correct device/dtype
+    min_params_norm_t = torch.tensor(min_params_norm, dtype=torch.float32, device=device)
+    max_params_norm_t = torch.tensor(max_params_norm, dtype=torch.float32, device=device)
 
     # Normalize target Iq
     target_norm = (target_log10Iq - log10Iq_mean) / log10Iq_std
@@ -1302,9 +1305,9 @@ def LS_fit_params_with_gen(target_log10Iq, gen_model=None, model_path=None, fold
         loss.backward()
         optimizer.step()
 
-        # Clamp parameters to normalized bounds
+        # Clamp parameters to normalized bounds (element-wise)
         with torch.no_grad():
-            params_init.data.clamp_(min_params_norm, max_params_norm)
+            params_init.data = torch.max(torch.min(params_init.data, max_params_norm_t), min_params_norm_t)
 
         # Track history
         param_history.append(params_init.detach().cpu().numpy().copy())
