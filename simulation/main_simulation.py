@@ -49,7 +49,7 @@ def main(args):
     )
 
     # render(folder, "compressed.gsd", frame=-1) # no need, confirm OVITO works
-    q_values = np.linspace(3.0, 13, 80)
+    q_values = np.linspace(3.0, 13, 100)
     # q_values = np.logspace(np.log10(0.1), np.log10(20), 200)
     run_sampling(
         save_dump_detail=args.save_dump_detail,
@@ -69,7 +69,7 @@ if __name__ == "__main__":
     parser.add_argument("--folder", type=str, required=True, help="folder to save data.")
     parser.add_argument("--run_type", type=str, choices=["prec", "rand"], required=True, default="prec", help="random parameter or precise parameter.")
     parser.add_argument("--run_num", type=int, default=0, help="run number to keep track of the run.")
-    parser.add_argument("--pd_type", type=str, choices=["uniform", "normal"], required=True, help="Polydispersity type.")
+    parser.add_argument("--pd_type", type=str, choices=["uniform", "normal", "lognormal"], required=True, help="Polydispersity type.")
     parser.add_argument("--N", type=int, required=True, help="Number of particles.")
 
     arg_required = False

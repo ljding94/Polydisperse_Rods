@@ -15,31 +15,32 @@ def main():
 
 
     # 1. example Iq and system snapshot (20250929 data)
-    plot_example_Iq_and_snapshot()
+    #plot_example_Iq_and_snapshot()
 
-    # 2. system architecture
+    # 2. variation of I(q) versus ,  phi, meanL, sigmaD, sigmaL
+    #plot_Iq_variation_params()
 
-    # 3. variation of I(q) versus ,  phi, meanL, sigmaD, sigmaL
-    plot_Iq_variation_params()
+    # 3. system architecture
+    #plot_single_Iq()
 
     # 4. SVD analysis
     plot_SVD_analysis()
 
     # 5 laten space distribution
-    plot_latent_space_distribution()
+    #plot_latent_space_distribution()
 
     # 6. sample generation comparison
-    plot_generation_comparison()
+    #plot_generation_comparison()
 
     # 7. generation MSE
-    plot_generation_MSE()
+    #plot_generation_MSE()
 
 
     # 8 LS fitting performance
-    plot_LS_fitting_performance()
+    #plot_LS_fitting_performance()
 
     # 9 more distribution (normal and lognormal)
-    plot_more_distributions_illustration()
+    #plot_more_distributions_illustration()
 
     # 10 normal and lognormal generation MSE
 
