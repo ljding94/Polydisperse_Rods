@@ -688,7 +688,7 @@ def svd_analysis(folder, dataset_file):
         nnd = calc_nearest_neighbor_distance(projection, all_params[:, i])
         ax.set_title(f"SVD {params_name[i]} (NND: {nnd:.2f})")
 
-    plt.tight_layout(pad=1.0)
+    plt.tight_layout(pad=1.5)
     svd_proj_path = os.path.join(folder, "svd_projection_scatter.png")
     plt.savefig(svd_proj_path, dpi=300)
     plt.show()

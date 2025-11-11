@@ -26,7 +26,7 @@ def main(args):
     elif args.run_type == "rand":
         system_params["phi"] = np.random.uniform(0.01, 0.3)
         system_params["meanL"] = np.random.uniform(0.0, 6.0)
-        # system_params["sigmaL"] = np.random.uniform(0.00, 0.50)
+        # system_params["sigmaL"] = np.random.uniform(0.00, 0.30)
         system_params["sigmaL"] = 0.0  # sigmaL is minor effect
         if args.pd_type == "uniform":
             system_params["sigmaD"] = np.random.uniform(0.00, 0.30)
@@ -40,11 +40,20 @@ def main(args):
     if not os.path.exists(folder):
         os.makedirs(folder)
 
+    '''
     run_initialization(
         save_dump_detail=args.save_dump_detail,
         system_params=system_params,
         randomization_steps=5000,
         max_compression_steps=50000,
+        num_compression_stage=2,
+    )
+    '''
+    run_initialization(
+        save_dump_detail=args.save_dump_detail,
+        system_params=system_params,
+        randomization_steps=2000,
+        max_compression_steps=20000,
         num_compression_stage=2,
     )
 

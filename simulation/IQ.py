@@ -3,7 +3,7 @@ from scipy.special import j1, roots_legendre
 from scipy.interpolate import RegularGridInterpolator
 
 
-def calculate_IQ(positions, directors, particle_types, type_Vs, q_values, type_Fq_interps, num_directions=100):
+def calculate_IQ(positions, directors, particle_types, type_Vs, q_values, type_Fq_interps, num_directions=49):
     """
     Calculate the 1D isotropic scattering intensity I(q) for a system of spherocylinders,
     normalized by <V^2> (mean square volume over all particles).

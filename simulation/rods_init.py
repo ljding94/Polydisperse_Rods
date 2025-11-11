@@ -284,7 +284,7 @@ def run_initialization(save_dump_detail, system_params, randomization_steps=5000
     print("rotate acceptance rate:", mc.rotate_moves[0] / sum(mc.rotate_moves))
     print("mote size:", mc.a["type_0"], mc.d["type_0"])
 
-    if not save_dump_detail:
+    if save_dump_detail:
         custom_writer = hoomd.write.CustomWriter(action=dumper, trigger=hoomd.trigger.Periodic(5000))
         sim.operations.writers.append(custom_writer)
 
@@ -295,4 +295,5 @@ def run_initialization(save_dump_detail, system_params, randomization_steps=5000
     if os.path.exists(fn):
         print(f"Removing existing file: {fn}")
         os.remove(fn)
+
     hoomd.write.GSD.write(state=sim.state, mode="xb", filename=gsd_filename)

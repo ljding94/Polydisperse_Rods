@@ -93,9 +93,9 @@ def main():
             }
             all_system_params.append(system_params)
         label = f"{run_type}_{pd_type}_N{N:.0f}"
-        build_Iq_dataset(folder, label, all_system_params, max_num_samples=5000)
+        #build_Iq_dataset(folder, label, all_system_params, max_num_samples=5000)
         dataset_file = f"{folder}/{label}_log10Iq_dataset.npz"
-        plot_Iq_versus_params(folder, dataset_file)
+        #plot_Iq_versus_params(folder, dataset_file)
         svd_analysis(folder, dataset_file)
 
 if __name__ == "__main__":
