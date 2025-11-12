@@ -24,17 +24,19 @@ def main():
 
 
 
-    if 0:
+    if 1:
         # folder = "../data/20250731"
         folder = "../data/20250915"
         folder = "../data/20250929"
         folder = "../data/20251001"
+        folder = "../data/20251111_csv" # prec run from Perl
+
         run_type = "prec"
         run_num = 0
         pd_type = "uniform"
-        N = 40000
+        N = 2000
         all_system_params = []
-        for phi in np.arange(0.03, 0.31, 0.03):
+        for phi in np.arange(0.05, 0.31, 0.05):
         #for phi in [0.12]:
             for meanL in np.arange(0.00, 6.10, 1.00):
             #for meanL in [4.0]:
@@ -68,18 +70,21 @@ def main():
                     all_system_params.append(system_params)
 
         label = f"{run_type}_{pd_type}_N{N}"
-        #build_Iq_dataset(folder, label, all_system_params)
+        build_Iq_dataset(folder, label, all_system_params)
         dataset_file = f"{folder}/{label}_log10Iq_dataset.npz"
         plot_Iq_versus_params(folder, dataset_file)
         svd_analysis(folder, dataset_file)
+        return 0
 
     if 1:
-        folder = "../data/20251005" # uniform rand data ~ 5000
+        #folder = "../data/20251005" # uniform rand data ~ 5000
         pd_type = "uniform"
 
         #folder = "../data/20251016" # normal rand data ~ 1000
         #folder = "../data/20251022" # normal rand data ~ 5000
         #pd_type = "normal"
+
+
 
         run_type = "rand"
         N = 20000

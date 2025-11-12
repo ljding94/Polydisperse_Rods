@@ -4,7 +4,7 @@ import sys
 import os
 from scipy.interpolate import make_smoothing_spline
 from scipy.spatial import cKDTree
-
+from scipy.signal import savgol_filter
 # Add parent directory to path so we can import from there
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "simulation"))
 from IQ import build_FQalpha_interpolator, FQalpha, PQ_single_rod_V2
@@ -476,11 +476,20 @@ def smooth_Iq(q, Iq, phi):
     log_Iq_smooth = log_Iq.copy()
     q_smooth1 = 3.1 + 7.5 * phi  # empirical smoothing threshold
     #q_smooth1 = 5.5  # empirical smoothing threshold
+    #q_smooth1 = 5.1 + 7.5 * phi  # empirical smoothing threshold
+
     nsmooth1 = np.argmin(np.abs(q - q_smooth1))
+    '''
     if nsmooth1 > 5:
         spl = make_smoothing_spline(q[:nsmooth1], log_Iq[:nsmooth1])  # cubic spline
         q_smooth = np.linspace(q[0], q[nsmooth1 - 1], nsmooth1)
         log_Iq_smooth[:nsmooth1] = spl(q_smooth)
+    '''
+    if nsmooth1 > 5:
+        # Use Savitzky-Golay filter for low Q
+        window_length = min(11, nsmooth1 if nsmooth1 % 2 == 1 else nsmooth1-1)
+        polyorder = 1
+        log_Iq_smooth[:nsmooth1] = savgol_filter(log_Iq[:nsmooth1], window_length, polyorder)
     Iq_smooth = 10**log_Iq_smooth
     return Iq_smooth
 

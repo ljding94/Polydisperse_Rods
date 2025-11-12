@@ -25,7 +25,7 @@ def main(args):
 
     elif args.run_type == "rand":
         system_params["phi"] = np.random.uniform(0.01, 0.3)
-        system_params["meanL"] = np.random.uniform(0.0, 6.0)
+        system_params["meanL"] = np.random.uniform(0.0, 5.0)
         # system_params["sigmaL"] = np.random.uniform(0.00, 0.30)
         system_params["sigmaL"] = 0.0  # sigmaL is minor effect
         if args.pd_type == "uniform":
@@ -58,7 +58,7 @@ def main(args):
     )
 
     # render(folder, "compressed.gsd", frame=-1) # no need, confirm OVITO works
-    q_values = np.linspace(3.0, 13, 100)
+    q_values = np.linspace(1.5, 11.5, 100)
     # q_values = np.logspace(np.log10(0.1), np.log10(20), 200)
     run_sampling(
         save_dump_detail=args.save_dump_detail,
